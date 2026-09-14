@@ -126,6 +126,15 @@ role/path identities retain their original meaning; cohort selection remains
 outside strict merge dimensions. Normal profile adoption remains separate from
 the anatomical qualification recipe.
 
+File location, logical DICOM object identity (SOPInstanceUID/SOPClassUID), and
+exact content identity remain distinct; see
+[the input policy](../../python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md).
+The strict ledger must not become the permanent discovery/deduplication model.
+Runtime environment v2 uses explicit interpreter installation roots, deterministic
+deduplicated distribution records, Python/platform and lockfile identity. Historical
+v1 artifacts remain readable with their original hashes; strict new executions
+must use newly captured v2 provenance, never a relabelled historical artifact.
+
 Historical runs without strict identities may be compared only through an
 explicit `legacy_allow_missing` mode. Identified and unidentified runs must never
 be mixed. Compatibility relaxation must later be based on named scientifically

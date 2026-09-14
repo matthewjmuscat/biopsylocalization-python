@@ -19,6 +19,7 @@ from .contracts import PatientCase
 from .contracts import PatientStageStatus
 from .contracts import validate_patient_uids
 from .inputs import PatientInputPaths
+from .scientific_dependencies import standalone_pathway_supported, executable_patient_scientific_pathway_stage_names
 from config.snapshots import read_pipeline_config_snapshot
 from output_artifacts.run_compatibility import RUN_COMPATIBILITY_METADATA_KEY
 from output_artifacts.run_compatibility import read_run_compatibility_identity
@@ -376,10 +377,8 @@ class PatientProcessRunPlan:
                 raise ValueError("timeout_seconds must be positive when provided")
         object.__setattr__(self, "timeout_seconds", timeout_seconds)
         object.__setattr__(self, "execution_mode", _normalize_execution_mode(self.execution_mode))
-        if self.execution_mode == "live_workers" and (
-            self.pathway_name != "anatomical_qa" or self.checkpoint_name != "anatomical_qa"
-        ):
-            raise ValueError("live_workers currently supports anatomical_qa pathway/checkpoint only")
+        if self.execution_mode == "live_workers" and not standalone_pathway_supported(self.pathway_name, self.checkpoint_name):
+            raise ValueError("live_workers supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only")
         object.__setattr__(self, "requested_jobs", _normalize_requested_jobs(self.requested_jobs))
         object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
         object.__setattr__(self, "run_compatibility_identity_path", _optional_path(self.run_compatibility_identity_path))
@@ -514,8 +513,8 @@ def build_patient_process_run_plan(
     resolved_compatibility_path = _optional_path(run_compatibility_identity_path)
     resolved_execution_mode = _normalize_execution_mode(execution_mode)
     if resolved_execution_mode == "live_workers":
-        if pathway_name != "anatomical_qa" or checkpoint_name != "anatomical_qa":
-            raise ValueError("live_workers currently supports anatomical_qa pathway/checkpoint only")
+        if not standalone_pathway_supported(pathway_name, checkpoint_name):
+            raise ValueError("live_workers supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only")
         if resolved_snapshot_path is None or not resolved_snapshot_path.is_file():
             raise FileNotFoundError("live_workers scientific config snapshot does not exist: {}".format(resolved_snapshot_path))
         if resolved_compatibility_path is None or not resolved_compatibility_path.is_file():
@@ -548,9 +547,8 @@ def build_patient_process_run_plan(
             "pathway_name": pathway_name,
             "checkpoint_name": checkpoint_name,
             "planned_stage_names": [
-                "grid_preprocessing",
-                "anatomical_preprocessing",
-            ] if pathway_name == "anatomical_qa" else [],
+                stage.value for stage in executable_patient_scientific_pathway_stage_names(pathway_name)
+            ] if standalone_pathway_supported(pathway_name, checkpoint_name) else [],
         }
     )
     if resolved_snapshot is not None:
@@ -732,7 +730,7 @@ def _validate_worker_compatibility_identity(
 def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runtime_builder=None) -> PatientWorkerResult:
     """Run one patient worker job.
 
-    Live execution is currently gated to the first ``anatomical_qa`` checkpoint.
+    Live execution is gated to the two explicitly supported preprocessing checkpoints.
     Later pathways fail closed until their standalone input/resource boundaries
     have independent parity evidence. ``runtime_builder`` is a Python-only
     validation injection; serialized jobs and the normal worker CLI cannot select
@@ -864,12 +862,12 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             input_preflight_metadata=input_preflight_metadata,
         )
 
-    if job.pathway_name != "anatomical_qa" or job.checkpoint_name != "anatomical_qa":
+    if not standalone_pathway_supported(job.pathway_name, job.checkpoint_name):
         return _worker_setup_failure_result(
             job,
             start_time=start_time,
             exit_code=2,
-            warning="standalone live worker currently supports anatomical_qa only",
+            warning="standalone live worker supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only",
             failed_boundary="standalone_pathway_support",
             input_preflight_metadata=input_preflight_metadata,
         )
@@ -964,6 +962,15 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             from validation.anatomical_execution import with_anatomical_checkpoint
 
             stages = with_anatomical_checkpoint(stages, pipeline_config)
+        capture_biopsy = job.metadata.get("capture_biopsy_preprocessing_checkpoint", False)
+        if not isinstance(capture_biopsy, bool):
+            raise TypeError("capture_biopsy_preprocessing_checkpoint must be a boolean")
+        if capture_biopsy:
+            if job.pathway_name != "biopsy_preprocessing_shadow":
+                raise ValueError("biopsy checkpoint requires biopsy_preprocessing_shadow")
+            from validation.anatomical_execution import with_preprocessing_checkpoint
+
+            stages = with_preprocessing_checkpoint(stages, pipeline_config, checkpoint_name=job.checkpoint_name)
         if INPUT_CONTENT_KEY in job.metadata:
             stages = _with_input_content_verification(stages, job)
         patient_result = run_patient_case(
@@ -999,7 +1006,7 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
         warnings=stage_warnings,
         metadata={
             "worker_boundary": "standalone_patient_process_runner",
-            "executed_boundary": "anatomical_qa",
+            "executed_boundary": job.checkpoint_name,
             "input_preflight": input_preflight_metadata,
             "patient_output_root": patient_result.output_root.as_posix(),
             "patient_run_manifest_path": patient_result.output_root.joinpath("patient_run_manifest.json").as_posix(),

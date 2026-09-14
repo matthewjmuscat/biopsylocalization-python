@@ -25,6 +25,9 @@ Current durable docs:
   `AGENTS.md` points coding agents here.
 - `runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` - forward/reverse/split
   qualification, input content identity, and isolated legacy dose characterization.
+- `runtime/BIOPSY_PREPROCESSING_RUNBOOK.md` - patient-local biopsy boundary,
+  shared checkpoint/pair validation, known centroid-sample defect, and reusable
+  synthetic dose fixture commands.
 
 - `architecture/PATIENT_MODULE_TREE_GUIDE.md` - canonical ownership and
   placement guide for patient-level scientific modules and the

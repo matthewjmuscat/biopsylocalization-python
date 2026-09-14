@@ -91,9 +91,10 @@ Current migration status:
 - Parent help, planning, TOML parsing, and dry-run workers no longer import
   optimizer/MC execution modules or initialize CUDA merely through the patient
   scientific config builder.
-- Non-dry-run worker execution is gated to the `anatomical_qa` checkpoint. The
+- Non-dry-run worker execution supports `anatomical_qa` and
+   `biopsy_preprocessing_shadow`, each with the same-named checkpoint. The
    worker rehydrates verified scientific config, builds one patient-local
-   runtime, executes the existing grid/anatomical stage adapters, writes the
+   runtime, executes the existing grid/anatomical and optionally biopsy adapters, writes the
    patient manifest, and exits. Later pathways still fail closed.
 - The legacy-main live patient-scientific runner default is disabled. Legacy-backed
   scientific execution and scientific-shadow validation now fail closed when a
@@ -222,10 +223,34 @@ September 2026 qualification update:
 - The anatomical qualification recipe and legacy dose-order probe are validation
   tools. The probe streams singleton state through the unchanged legacy wrapper;
   it is never a normal worker mode or a full-cohort runtime.
-- The new real-patient forward/reverse/split gate remains user-operated and
-  unvalidated until `../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` passes.
+- The real-patient forward/reverse/split gate passed at exact 0/0 for the same
+  five cases on 2026-09-13 under clean `b123089`. See
+  `../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` for provenance and limits.
+  The optional real dose probe did not complete; it exposed a v1 runtime
+  environment fingerprint defect, without invalidating this anatomical PASS.
 - `PROJECT_NORTH_STARS.md` records continuing config, main, dictionary-state,
   and composable-pathway migration tracks.
+
+September 2026 biopsy-preprocessing implementation:
+
+- Environment identity v2 enumerates explicit interpreter installation roots,
+  including enabled system/user sites, rather than mutable `sys.path`. Package
+  names are normalized and identical name/version records deduplicated before
+  hashing. Python/platform/lockfile dimensions remain. Historical v1 identities
+  retain their hashes and remain readable; strict new-run checks require v2.
+- `biopsy_preprocessing_shadow` uses the existing dependency-selected grid →
+  anatomical → preprocessing sequence and artifact finalization. Existing
+  patient adapters reconstruct real biopsies, prepare targets/multiplicity/lengths,
+  and plan simulated geometry and samples. No optimizer, realization, uncertainty
+  spreadsheet attachment, classification, MC or guidance pathway is enabled.
+- The shared checkpoint engine adds bounded biopsy fields through
+  `validation/biopsy_checkpoint_fields.py`. The existing paired service reuses
+  byte ledgers, successful-attempt matching, strict provenance and exact 0/0
+  comparison. No second runner or validation framework was introduced.
+- Synthetic mechanism/contract evidence is not a real biopsy PASS. The existing
+  centroid-sampling allocation defect and user gate are documented in
+  `../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md`; no scientific fix is folded into
+  this behavior-preserving migration without an explicit decision.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
@@ -488,9 +513,9 @@ which patient objects or input files feed the scientific stages. Phase 7 can
 silently change defaults. Both should be split into small, reviewable passes
 with explicit before/after config or manifest evidence.
 
-Phase 4 implementation now exists for `anatomical_qa`; its confidence remains
-medium until the controlled patient parity gate passes. That gate, rather than
-the presence of executable code, controls progression to biopsy preprocessing.
+Phase 4 anatomical input-migration and tested scheduling gates have passed.
+The biopsy-preprocessing extension now has synthetic implementation evidence;
+its separately documented user gate controls further scientific progression.
 
 Recommended validation cadence:
 

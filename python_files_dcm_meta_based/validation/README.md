@@ -18,6 +18,12 @@ comparison runs after execution in a child process. `probe_legacy_dose_order.py`
 is a separate disposable legacy characterization tool. Neither enables later
 scientific pathways or replaces full-output/sidecar validation.
 
+The anatomical independence gate passed on five real cases at clean `b123089`.
+The next [biopsy preprocessing runbook](../../docs/runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
+documents `validate_patient_preprocessing.py`, which extends the existing paired
+service/checkpoint engine, and the user-operated synthetic dose fixture builder.
+Real biopsy parity is pending; the known centroid-sampling defect remains explicit.
+
 ## Quick Start
 
 From the repository root:

@@ -88,8 +88,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--launch-workers",
         action="store_true",
-        help="Launch worker subprocesses. Live execution currently supports anatomical_qa only.",
+        help="Launch workers for anatomical_qa or biopsy_preprocessing_shadow with a matching checkpoint.",
     )
+    parser.add_argument("--capture-input-content", action="store_true",
+                        help="Bind declared input file bytes to jobs and verify them before/after execution.")
     parser.add_argument(
         "--timeout-seconds",
         type=float,
@@ -105,6 +107,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("choose either --launch-dry-run-workers or --launch-workers, not both")
 
     if args.profile is not None:
+        if args.capture_input_content:
+            raise ValueError("--capture-input-content currently belongs to manual planning, not a profile override")
         _reject_manual_args_with_profile(args)
         profile = load_patient_orchestration_profile(args.profile)
         if not profile.enabled:
@@ -133,6 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             execution_mode=execution_mode,
             scientific_config_snapshot_path=args.scientific_config_snapshot,
             run_compatibility_identity_path=args.run_compatibility_identity,
+            capture_input_content=args.capture_input_content,
             metadata={"source": "run_patient_scientific_standalone.py", "source_mode": "manual_cli"},
         )
 

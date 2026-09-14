@@ -15,15 +15,27 @@ not permanent reproduction of the main sequence.
 
 - **Validated:** five-case standalone versus legacy singleton anatomical input
   construction at exact 0/0 under `0f2a636`, including F1/F2, dose and ADC.
-- **Implemented, user gate pending:** the bounded anatomical forward/reverse/split
-  qualification and separate unchanged legacy dose-state characterization. See
+- **Validated:** the five-case anatomical forward/reverse/split qualification
+  passed exact 0/0 on 2026-09-13 under clean `b123089`. The optional real legacy
+  dose probe did not complete because environment v1 depended on import order;
+  environment v2 now fixes that provenance mechanism. See
   [the runbook](../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md).
 - **Next independent architecture slice:** extract production config/default
   construction from main with exact snapshot equivalence. Avoid a second config
   model and avoid treating patient validation as a reason to postpone all cleanup.
-- **Next scientific boundary after qualification:** standalone biopsy-facing
-  preprocessing inputs/products, then optimizer and realization/sampling in
-  dependency-valid increments. Reuse existing modular science.
+- **Implemented, scientific gate pending:** standalone biopsy preprocessing with
+  bounded numerical products and the existing paired validator. Resolve the
+  documented centroid-sampling defect before interpreting exact biopsy parity;
+  then run a representative paired case with real and simulated biopsies.
+  [Biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md) records the limits.
+- **Next scientific gate:** transform generation/optimizer producer inputs and
+  outputs, followed by realized biopsy geometry and classification in explicit
+  dependency-valid slices. Do not treat the current coarse DAG as a permanent
+  requirement that every guidance/classification workflow run optimization or MC.
+- **Near-term independent input slice:** replace last-path-wins discovery with
+  SOP identity/content conflict handling and provenance aliases. The exact-file
+  execution ledger is not the deduplication model; see
+  [DICOM input shape](../../python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md).
 - **Continuing state/main migration:** replace master reference/info dictionary
   access with typed grid/geometry and later biopsy products at validated
   boundaries; delete replaced main responsibilities rather than maintaining two

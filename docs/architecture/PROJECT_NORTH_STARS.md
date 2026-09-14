@@ -102,6 +102,12 @@ development velocity matter as well as caution.
   No graph or scientific dependency changes in this phase.
 - **Soon: typed grid/geometry products.** Use retained evidence to choose a small
   typed boundary replacing dictionary reads; do not rewrite all state at once.
+- **Soon: logical DICOM discovery.** Separate file location, logical object UIDs,
+  and exact bytes. Collapse identical physical copies with retained aliases;
+  fail on conflicting content under one SOPInstanceUID. Preserve strict planned
+  file mutation checks. Experimental sibling directories may legitimately repeat
+  inputs; filenames are not object identity. See the input package's
+  [identity policy](../../python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md).
 - **Later: uncertainty contracts.** Preserve existing transforms while cleaning
   their representation and supporting independently validated new models.
 - **Research hypothesis:** effective-state differences may affect derived

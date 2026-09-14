@@ -5,6 +5,9 @@ It preserves role order and path identity; it does not anonymize inputs or claim
 that matching bytes imply scientifically correct routing. Callers must keep
 inputs immutable during execution. Before/after checks detect drift, not every
 possible transient modification between checks.
+This ledger binds physical locations and bytes for strict local execution. It
+does not identify or deduplicate logical DICOM objects (SOPInstanceUID/SOPClassUID).
+See DICOM_INPUT_SHAPE.md for the separate planned discovery identity policy.
 """
 
 from __future__ import annotations

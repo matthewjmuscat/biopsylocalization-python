@@ -1,10 +1,13 @@
-"""Independent, patient-scoped quantitative anatomical validation artifacts.
+"""Patient-scoped anatomical and biopsy-preprocessing validation artifacts.
 
 This transitional post-preprocessing boundary reads explicitly named legacy
 fields without invoking science, loading DICOM, or serializing runtime objects.
 It owns NPZ/JSON evidence and comparison, not orchestration or parity approval.
 Coordinates retain DICOM patient millimetres; other quantities retain the units
 specified by each field. No alignment, sorting of points, or rescaling occurs.
+The historical anatomical entrypoint names remain compatible. An explicit
+``checkpoint_name`` selects the second bounded biopsy schema, which adds fields
+through biopsy_checkpoint_fields while reusing integrity and comparison logic.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from config.snapshots import (
     canonical_sha256,
 )
 from legacy_data_keys import legacy_data_keys
+from .preprocessing_boundary import preprocessing_boundary
 
 
 SCHEMA_VERSION = "anatomical_checkpoint_v1"
@@ -291,14 +295,15 @@ def _capture_modalities(capture: _Capture, patient: Mapping, refs: Any) -> None:
             capture.field([role, cloud_key], _points_spec(cloud_key), _member(store.get(cloud_key), "points"))
 
 
-def _capture_tables(capture: _Capture, patient: Mapping, refs: Any) -> None:
+def _capture_tables(capture: _Capture, patient: Mapping, refs: Any, *, include_biopsies: bool = False) -> None:
     all_ref = _mapping(patient.get(refs.all_ref_key))
     tables = _mapping(all_ref.get(_KEYS.patient_all_reference.preprocessing_output_dataframes_key))
     for name in _PATIENT_TABLES:
         capture.field(["patient_tables", name], AnatomicalFieldSpec(name, "table"), tables.get(name))
     if any(not isinstance(name, str) for name in tables):
         raise TypeError("patient preprocessing table names must be strings")
-    excluded = tuple(sorted(set(tables) - set(_PATIENT_TABLES)))
+    included = set(_PATIENT_TABLES) | ({"Simulated biopsy preparation dataframe"} if include_biopsies else set())
+    excluded = tuple(sorted(set(tables) - included))
     capture.field(["table_exclusions"], AnatomicalFieldSpec("unlisted patient table names", "label"), excluded)
 
 
@@ -333,7 +338,7 @@ def _validate_array(array: np.ndarray, contract: Mapping[str, Any]) -> None:
         raise TypeError("mesh triangle indices must have integer dtype")
 
 
-def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray]) -> dict[str, Any]:
+def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray], *, include_biopsies: bool = False) -> dict[str, Any]:
     structures: dict[tuple[str, ...], dict[str, Any]] = {}
     invalid_geometry = []
     for item in items:
@@ -358,7 +363,7 @@ def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray]) -> 
          "complete": counts["raw"] > 0 and counts["reconstructed"] > 0 and len(counts["identity"]) == 2}
         for path, counts in structures.items()
     ]
-    return {
+    result = {
         "geometry": geometry,
         "geometry_complete": bool(geometry) and not invalid_geometry and all(item["complete"] for item in geometry),
         "invalid_geometry": invalid_geometry,
@@ -370,6 +375,13 @@ def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray]) -> 
         "excluded_patient_tables": next((item["value"] for item in items if item["path"] == ["table_exclusions"]), _label(())),
         "exclusions": ["biopsies", "runtime resources", "timings", "DICOM bytes", "unlisted legacy fields", "dose gradient arrow render objects", "cloud colors/normals", "discarded MR lattices (not recomputed)", "unlisted patient tables", "table attrs", "source/environment/input file content verification"],
     }
+    if include_biopsies:
+        from .biopsy_checkpoint_fields import biopsy_coverage
+
+        result["biopsies"] = biopsy_coverage(items, arrays)
+        result["exclusions"].remove("biopsies")
+        result["exclusions"].extend(["optimizer/realization/classification/MC/guidance products", "uncertainty spreadsheet attachment"])
+    return result
 
 
 def _sha256_file(path: Path) -> str:
@@ -389,7 +401,9 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
 def _validate_inventory(manifest: Mapping[str, Any]) -> None:
     families = manifest["families"]
     refs = manifest["reference_keys"]
-    if set(families) != set(_FAMILY_ATTRIBUTES) or set(refs) != {"dose_ref", "mr_adc_ref", "all_ref_key"}:
+    include_biopsies = manifest["schema_version"] == "biopsy_preprocessing_checkpoint_v1"
+    reference_names = {"dose_ref", "mr_adc_ref", "all_ref_key"} | ({"bx_ref"} if include_biopsies else set())
+    if set(families) != set(_FAMILY_ATTRIBUTES) or set(refs) != reference_names:
         raise ValueError("reference key schema mismatch")
     if not all(isinstance(value, str) and value for value in (*families.values(), *refs.values())):
         raise ValueError("reference keys must be nonempty strings")
@@ -413,6 +427,10 @@ def _validate_inventory(manifest: Mapping[str, Any]) -> None:
             _capture_structure(expected, ["structures", family, str(index)], {})
     _capture_modalities(expected, {}, SimpleNamespace(**refs))
     _capture_tables(expected, {}, SimpleNamespace(**refs))
+    if include_biopsies:
+        from .biopsy_checkpoint_fields import expected_biopsy_inventory
+
+        expected_biopsy_inventory(expected, items)
     contracts = {tuple(item["path"]): item["contract"] for item in expected.items}
     for path, contract in list(contracts.items()):
         item = items[path]
@@ -479,6 +497,7 @@ def _table_inventory(path: tuple[str, ...], item: Mapping, items: Mapping, contr
 def write_anatomical_checkpoint(
     *, runtime_state: Any, pipeline_config: Any, output_dir: Path,
     metadata: Mapping | None = None,
+    checkpoint_name: str = "anatomical_qa",
 ) -> Path:
     """Capture one completed patient into a fresh directory; return its manifest.
 
@@ -495,7 +514,12 @@ def write_anatomical_checkpoint(
     raw and reconstructed XYZ evidence. Present modalities require their grid
     arrays and physical metadata; missing modalities are allowed. The embedded
     field contracts define axes/units, and coverage lists every absent field.
+    ``biopsy_preprocessing_shadow`` additionally requires completed biopsy
+    reconstruction/planning products and a patient preparation table. Planned
+    coordinates retain their canonical local frame, not the DICOM patient frame.
     """
+    boundary = preprocessing_boundary(checkpoint_name)
+    include_biopsies = checkpoint_name == "biopsy_preprocessing_shadow"
     snapshot = build_pipeline_scientific_config_snapshot(pipeline_config)
     if metadata is not None and not isinstance(metadata, Mapping):
         raise TypeError("metadata must be a mapping")
@@ -521,41 +545,50 @@ def write_anatomical_checkpoint(
                 raise TypeError("structure record must be a mapping")
             _capture_structure(capture, ["structures", family, str(index)], record)
     _capture_modalities(capture, patient, refs)
-    _capture_tables(capture, patient, refs)
-    coverage = _coverage(capture.items, capture.arrays)
+    _capture_tables(capture, patient, refs, include_biopsies=include_biopsies)
+    if include_biopsies:
+        from .biopsy_checkpoint_fields import capture_biopsies
+
+        capture_biopsies(capture, patient, refs)
+    coverage = _coverage(capture.items, capture.arrays, include_biopsies=include_biopsies)
+    if include_biopsies and not coverage["biopsies"]["complete"]:
+        raise ValueError("incomplete biopsy preprocessing evidence: " + str(coverage["biopsies"]))
     if not coverage["geometry_complete"]:
         raise ValueError("checkpoint requires ROI identity and nonempty raw and reconstructed geometry for every structure")
     if not all(modality["complete"] for modality in coverage["modalities"].values()):
         raise ValueError("present modality has incomplete grid evidence")
     manifest = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": boundary.schema_version,
         "patient_uid": patient_uid,
         "families": families,
-        "reference_keys": {name: getattr(refs, name) for name in ("dose_ref", "mr_adc_ref", "all_ref_key")},
+        "reference_keys": {name: getattr(refs, name) for name in
+                           ("dose_ref", "mr_adc_ref", "all_ref_key", *(["bx_ref"] if include_biopsies else []))},
         "scientific_config": snapshot.to_dict(),
         "metadata": stored_metadata,
         "metadata_sha256": canonical_sha256(stored_metadata),
         "items": capture.items,
         "coverage": coverage,
-        "arrays_file": _ARRAYS_NAME,
+        "arrays_file": boundary.arrays_name,
     }
     _validate_inventory(manifest)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
-    arrays_path = output_dir / _ARRAYS_NAME
+    arrays_path = output_dir / boundary.arrays_name
     with arrays_path.open("xb") as stream:
         np.savez_compressed(stream, **capture.arrays)
     manifest["arrays_sha256"] = _sha256_file(arrays_path)
     manifest["manifest_sha256"] = canonical_sha256(manifest)
-    manifest_path = output_dir / _MANIFEST_NAME
+    manifest_path = output_dir / boundary.manifest_name
     _write_json(manifest_path, manifest)
     return manifest_path
 
 
-def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+def _load_checkpoint(path: Path, *, checkpoint_name: str = "anatomical_qa") -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    boundary = preprocessing_boundary(checkpoint_name)
+    include_biopsies = checkpoint_name == "biopsy_preprocessing_shadow"
     with Path(path).open(encoding="utf-8") as stream:
         manifest = json.load(stream)
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != boundary.schema_version:
         raise ValueError("unsupported checkpoint schema")
     unsigned = dict(manifest)
     digest = unsigned.pop("manifest_sha256", None)
@@ -566,9 +599,9 @@ def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, np.ndarray]]
     if not isinstance(manifest["metadata"], dict):
         raise ValueError("metadata must be a JSON object")
     PipelineConfigSnapshot(**manifest["scientific_config"])
-    if manifest["arrays_file"] != _ARRAYS_NAME:
+    if manifest["arrays_file"] != boundary.arrays_name:
         raise ValueError("arrays_file must be the checkpoint-local NPZ filename")
-    arrays_path = Path(path).parent / _ARRAYS_NAME
+    arrays_path = Path(path).parent / boundary.arrays_name
     if arrays_path.is_symlink():
         raise ValueError("NPZ symlinks are not supported")
     if _sha256_file(arrays_path) != manifest["arrays_sha256"]:
@@ -598,7 +631,9 @@ def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, np.ndarray]]
     if len(set(payloads)) != len(payloads) or set(payloads) != set(arrays):
         raise ValueError("NPZ inventory does not match manifest")
     _validate_inventory(manifest)
-    coverage = _coverage(manifest["items"], arrays)
+    coverage = _coverage(manifest["items"], arrays, include_biopsies=include_biopsies)
+    if include_biopsies and not coverage["biopsies"]["complete"]:
+        raise ValueError("incomplete biopsy preprocessing evidence")
     if coverage != manifest["coverage"] or not coverage["geometry_complete"]:
         raise ValueError("incomplete or inconsistent geometry coverage")
     if not all(modality["complete"] for modality in coverage["modalities"].values()):
@@ -609,6 +644,7 @@ def _load_checkpoint(path: Path) -> tuple[dict[str, Any], dict[str, np.ndarray]]
 def validate_anatomical_checkpoint_identity(
     path: Path, *, patient_uid: str, scientific_config_sha256: str,
     expected_metadata: Mapping[str, Any],
+    checkpoint_name: str = "anatomical_qa",
 ) -> None:
     """Verify checkpoint integrity and bind retained evidence to a requesting job.
 
@@ -616,7 +652,7 @@ def validate_anatomical_checkpoint_identity(
     caller supplies authoritative metadata fields; extra capture metadata is
     allowed, but the supplied fields must match exactly.
     """
-    manifest, _arrays = _load_checkpoint(path)
+    manifest, _arrays = _load_checkpoint(path, checkpoint_name=checkpoint_name)
     if manifest["patient_uid"] != patient_uid:
         raise ValueError("checkpoint patient UID differs from requested job")
     if manifest["scientific_config"]["config_sha256"] != scientific_config_sha256:
@@ -671,6 +707,7 @@ def _compare_array(reference: np.ndarray, candidate: np.ndarray, *, abs_tol: flo
 def compare_anatomical_checkpoints(
     reference_path: Path, candidate_path: Path, *, abs_tol: float,
     rel_tol: float, output_path: Path | None = None,
+    checkpoint_name: str = "anatomical_qa",
 ) -> dict:
     """Compare verified artifacts without running scientific algorithms.
 
@@ -684,11 +721,12 @@ def compare_anatomical_checkpoints(
     independently captured pathways. These unkeyed hashes detect corruption,
     not authenticity or source/input/environment content identity.
     """
+    boundary = preprocessing_boundary(checkpoint_name)
     for tolerance in (abs_tol, rel_tol):
         if isinstance(tolerance, bool) or not isinstance(tolerance, Real) or not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError("tolerances must be finite nonnegative numbers")
     result: dict[str, Any] = {
-        "schema_version": "anatomical_checkpoint_comparison_v1", "passed": False,
+        "schema_version": boundary.directory + "_checkpoint_comparison_v1", "passed": False,
         "abs_tol": float(abs_tol), "rel_tol": float(rel_tol),
         "items": [], "coverage": {}, "errors": [],
         "metadata_policy": "verify internal fingerprints; do not require cross-pathway equality",
@@ -696,7 +734,7 @@ def compare_anatomical_checkpoints(
     loaded = {}
     for role, path in (("reference", reference_path), ("candidate", candidate_path)):
         try:
-            manifest, arrays = _load_checkpoint(Path(path))
+            manifest, arrays = _load_checkpoint(Path(path), checkpoint_name=checkpoint_name)
             loaded[role] = (manifest, arrays)
             result["coverage"][role] = manifest["coverage"]
             result[role + "_metadata"] = manifest["metadata"]

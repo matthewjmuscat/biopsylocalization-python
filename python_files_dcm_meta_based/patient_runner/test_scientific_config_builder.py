@@ -21,6 +21,24 @@ from patient_runner.scientific_runner import summarize_patient_scientific_run_co
 
 
 class PatientRunnerScientificConfigBuilderTests(unittest.TestCase):
+    def test_biopsy_pathway_builds_actual_preprocessing_config_without_later_stages(self):
+        from config.test_snapshots import _build_real_pipeline_config
+        from patient_runner.scientific_dependencies import executable_patient_scientific_pathway_stage_names
+
+        pipeline = _build_real_pipeline_config()
+        with patch("patient_runner.scientific_config_builder._build_grid_preprocessing_config", return_value=SimpleNamespace(enabled=True)), \
+                patch("patient_runner.scientific_config_builder._build_anatomical_preprocessing_config", return_value=SimpleNamespace(enabled=True)):
+            config = build_patient_runner_scientific_config(pipeline, stage_names=
+                executable_patient_scientific_pathway_stage_names("biopsy_preprocessing_shadow"))
+        self.assertEqual(config.preprocessing.real_biopsy_processing.biopsy_radius, pipeline.biopsy.geometry.biopsy_radius)
+        self.assertEqual(config.preprocessing.simulated_biopsy_preparation.simulated_biopsy_length_method,
+                         pipeline.biopsy.simulated.simulated_biopsy_length_method)
+        self.assertEqual(config.preprocessing.simulated_biopsy_planning.bx_sample_pts_lattice_spacing,
+                         pipeline.mc.prep.bx_sample_pts_lattice_spacing)
+        self.assertIsNone(config.preprocessing.uncertainty_attachment)
+        for name in ("mc_prep", "optimization", "simulated_biopsy_finalization", "sampling_classification", "mc_simulation", "guidance"):
+            self.assertIsNone(getattr(config, name))
+
     def test_stage_scoped_builder_constructs_anatomical_checkpoint_only(self) -> None:
         pipeline_config = SimpleNamespace(
             structure_registry=SimpleNamespace(

@@ -1,4 +1,4 @@
-"""Validation-only input adapter and evidence hook for anatomical runs.
+"""Validation-only singleton input adapter and preprocessing checkpoint hooks.
 
 The legacy input lane calls the unchanged cohort input builder with one patient.
 Both lanes subsequently use the same established anatomical stage adapters: this
@@ -69,19 +69,26 @@ def build_legacy_input_anatomical_runtime(*, patient_case, patient_inputs, pipel
 
 
 def with_anatomical_checkpoint(stages: tuple, pipeline_config: Any) -> tuple:
+    """Compatibility entrypoint for the original anatomical evidence hook."""
+    return with_preprocessing_checkpoint(stages, pipeline_config, checkpoint_name="anatomical_qa")
+
+
+def with_preprocessing_checkpoint(stages: tuple, pipeline_config: Any, *, checkpoint_name: str) -> tuple:
     """Decorate the anatomical stage with fail-closed, opt-in evidence writing.
 
     Checkpoint files are validation evidence, not cohort dataframe fragments.
     Capture errors fail the stage through the existing runner error handling.
     """
     from patient_runner.runner import PatientStage
-    from patient_runner.contracts import PatientStageName
     from validation.anatomical_checkpoint import write_anatomical_checkpoint
+    from validation.preprocessing_boundary import preprocessing_boundary
+
+    boundary = preprocessing_boundary(checkpoint_name)
 
     wrapped = []
     found = False
     for stage in stages:
-        if stage.stage_name != PatientStageName.ANATOMICAL_PREPROCESSING:
+        if stage.stage_name != boundary.stage_name:
             wrapped.append(stage)
             continue
         found = True
@@ -93,12 +100,13 @@ def with_anatomical_checkpoint(stages: tuple, pipeline_config: Any) -> tuple:
                 return result
             path = write_anatomical_checkpoint(
                 runtime_state=runtime_state, pipeline_config=pipeline_config,
-                output_dir=config.patient_output_dir(runtime_state.patient_case) / "validation" / "anatomical",
+                output_dir=config.patient_output_dir(runtime_state.patient_case) / "validation" / boundary.directory,
                 metadata={**runtime_state.metadata, "stage_metadata": dict(result.metadata)},
+                checkpoint_name=checkpoint_name,
             )
-            return replace(result, metadata={**result.metadata, "anatomical_checkpoint_path": str(path)})
+            return replace(result, metadata={**result.metadata, boundary.directory + "_checkpoint_path": str(path)})
 
         wrapped.append(PatientStage(stage.stage_name, capture))
     if not found:
-        raise ValueError("anatomical checkpoint requires the anatomical preprocessing stage")
+        raise ValueError("checkpoint requires stage: " + boundary.stage_name)
     return tuple(wrapped)

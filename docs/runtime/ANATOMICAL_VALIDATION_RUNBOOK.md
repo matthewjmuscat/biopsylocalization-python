@@ -12,8 +12,9 @@ User-operated evidence at commit `0f2a6361bfb6dee8c27a0dc375c2297657b4e368`
 now passes exact 0/0 for 181 F1/F2, 184 F1/F2 and 194 F2 (including ADC).
 The first 194 F2 attempt failed in both input builders because ADC files were
 missing; its fresh retry passed. This establishes the captured singleton input
-migration gate only. Continue with [anatomical independence](ANATOMICAL_INDEPENDENCE_RUNBOOK.md)
-before exposing later standalone pathways.
+migration gate only. The subsequent [anatomical independence](ANATOMICAL_INDEPENDENCE_RUNBOOK.md)
+gate also passed on those five cases under clean `b123089` on 2026-09-13.
+The next bounded gate is [biopsy preprocessing](BIOPSY_PREPROCESSING_RUNBOOK.md).
 
 The paired lanes run in fresh, sequential child processes:
 

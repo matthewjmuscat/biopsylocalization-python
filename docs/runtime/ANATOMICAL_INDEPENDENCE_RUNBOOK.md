@@ -3,10 +3,42 @@
 ## Scope and present status
 
 The five-case singleton anatomical input-migration gate passed under commit
-`0f2a6361bfb6dee8c27a0dc375c2297657b4e368`. This new qualification tests ordinary
-standalone execution through the same anatomical boundary under changed launch
-order and run grouping. Its real-patient gate is **not yet run** by development.
+`0f2a6361bfb6dee8c27a0dc375c2297657b4e368`. The user subsequently completed this
+forward/reverse/split qualification on **2026-09-13: PASS**, from clean commit
+`b123089747c7101bc0748369b56e4228ddd61e8d` on `feat/patient_runner`.
 Only the user executes patient science. Keep historical sources and reports read-only.
+
+The retained five cases were `181 (F1)`, `181 (F2)`, `184 (F1)`, `184 (F2)`,
+and `194 (F2)` (ADC). Split A was `181 (F1)` and `181 (F2)`; split B was the
+complement. All five fresh singleton input-builder pairs and standalone
+forward/reverse/split-union comparisons passed at exact **0/0**, including
+input bytes, config/source/environment identity, planned stages, and resolved
+grid state. No order-dependent runtime state was observed at this checkpoint
+for these cases and schedules.
+
+Prepared provenance reported with the user-operated PASS:
+
+| Dimension | Recorded value |
+| --- | --- |
+| Source SHA | `ef3ac9818dbad1ad1b6be3a5b9218a8cfe1a5d8af28a89d04558dd026dabf9d5` |
+| Compatibility SHA | `1f8f417f4db1d9b5f4375b97c9bf010832eec4ca399a950d67a421b4f480b0ef` |
+| Input policy SHA | `78dbb8c537b8dec9fabb28ffb188be83d421308d2bc73aa827366885ee19fb80` |
+| Runtime environment SHA (v1) | `35f4bebe54e7682618881b308d88155870b22ade30d03ea7261dcec4c174b0b4` |
+| Scientific config SHA | `7d8ee8231b2573fab3c081de68ea77fdee1f855553235010ca8104caeaddd70c` |
+| Output schema / policy | `phase3d_output_schema_registry_v1` / `strict_exact_v1` |
+
+This proves tested anatomical input-migration and scheduling parity. It does
+**not** establish biopsy preprocessing, optimization, realization, classification,
+dosimetry/MC, guidance, untested patients, concurrency, or independent truth of
+shared algorithms.
+
+The optional real legacy-dose probe **did not complete**. Repeated environment
+checks exposed import-order-dependent distribution discovery after a legacy
+import added vendored packages to `sys.path`. That provenance defect does not
+invalidate the qualification PASS and is not a completed dose characterization.
+New code captures environment v2 from interpreter installation roots; historical
+v1 hashes remain readable and unchanged, and do not match new v2 runs. Prepare
+fresh current provenance for future work rather than relabelling old reports.
 
 The recipe runs fresh singleton pairs, one combined forward order, one combined
 reverse order, and disjoint split B then A. For five patients this is **25 patient
@@ -176,8 +208,10 @@ to changed inputs. Never mix these runs into the new strict qualification.
 
 ## Continuing migration
 
-No standalone biopsy/optimizer/realization/sampling/MC/output/guidance pathway is
-enabled by this implementation. Full table assembly parity, whole-main behavior,
+The subsequent [biopsy preprocessing pass](BIOPSY_PREPROCESSING_RUNBOOK.md) enables
+that bounded standalone pathway for migration validation. Optimizer, realization,
+classification, MC, output and guidance pathways remain fail-closed in normal
+standalone live workers. Full table assembly parity, whole-main behavior,
 parallel GPU scheduling and patient resume remain separate gates. Shared
 anatomical algorithm correctness is also not established by migration parity.
 

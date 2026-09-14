@@ -9,7 +9,8 @@ prerequisites and baseline choices do not override the current standalone proces
 architecture and [project north stars](PROJECT_NORTH_STARS.md).
 Scientific snapshots, strict provenance, and typed rehydration now exist. The
 five-case singleton anatomical migration gate passed under `0f2a636`; order/split
-qualification is the next user-operated gate. Defaults still originate in main,
+qualification passed under clean `b123089` on 2026-09-13. Biopsy preprocessing is
+the next scientific gate. Defaults still originate in main,
 and the export-only option is transitional.
 
 The next config slice should extract existing production default/config

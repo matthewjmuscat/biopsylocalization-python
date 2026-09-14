@@ -178,25 +178,31 @@ def compare_legacy_dose_orders(reference_dir: Path, candidate_dir: Path, *, pati
 
 
 def run_legacy_dose_probe(qualification_plan: Path, output_dir: Path) -> dict:
-    """User-operated disposable probe from the frozen qualification plan.
+    """User-operated disposable probe from a frozen qualification/process plan.
 
     Checks current source/environment/config and patient content before loading
     each singleton, then verifies content again after processing. Runs forward,
     reverse and singleton-reset controls. Historical artifacts are never written.
+    Direct process plans support small synthetic fixture probes without forcing
+    a full anatomical qualification campaign first.
     """
     from config.rehydration import rehydrate_pipeline_scientific_config_snapshot
     from config.snapshots import read_pipeline_config_snapshot
     from input_data.content_identity import INPUT_CONTENT_KEY, verify_patient_input_content
-    from patient_runner.process_runner import PatientWorkerJob, _validate_worker_compatibility_identity
+    from patient_runner.process_runner import PatientWorkerJob, _validate_worker_compatibility_identity, PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION
     from validation.anatomical_execution import build_legacy_input_anatomical_runtime
     from preprocessing.dose_grid_processing import DoseGridProcessingConfig
 
     payload = json.loads(Path(qualification_plan).read_text())
-    if payload.get("schema_version") != "anatomical_independence_plan_v1":
-        raise ValueError("expected an anatomical qualification plan")
-    jobs = [PatientWorkerJob.from_mapping(p) for p in payload["base_plan"]["worker_jobs"]]
+    if payload.get("schema_version") == "anatomical_independence_plan_v1":
+        payload = payload["base_plan"]
+    if payload.get("schema_version") != PATIENT_PROCESS_RUN_PLAN_SCHEMA_VERSION:
+        raise ValueError("expected an anatomical qualification or process plan")
+    jobs = [PatientWorkerJob.from_mapping(p) for p in payload["worker_jobs"]]
     if not jobs or len({j.patient_case.patient_uid for j in jobs}) != len(jobs):
         raise ValueError("probe requires distinct planned patients")
+    if any(j.pathway_name != "anatomical_qa" or j.checkpoint_name != "anatomical_qa" for j in jobs):
+        raise ValueError("dose probe requires anatomical_qa jobs")
     snapshots = []
     for job in jobs:
         snapshot = read_pipeline_config_snapshot(job.scientific_config_snapshot_path)

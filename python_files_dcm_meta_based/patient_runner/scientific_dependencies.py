@@ -21,6 +21,14 @@ class PatientScientificPathwayName(str, Enum):
     FULL_CURRENT_PIPELINE_SHADOW = "full_current_pipeline_shadow"
 
 
+STANDALONE_LIVE_PATHWAYS = ("anatomical_qa", "biopsy_preprocessing_shadow")
+
+
+def standalone_pathway_supported(pathway_name: str, checkpoint_name: str) -> bool:
+    """Keep live execution bounded to explicitly implemented checkpoint pairs."""
+    return pathway_name in STANDALONE_LIVE_PATHWAYS and checkpoint_name == pathway_name
+
+
 @dataclass(frozen=True, slots=True)
 class PatientScientificStageDependency:
     """Dependency declaration for one patient-runner scientific stage node."""

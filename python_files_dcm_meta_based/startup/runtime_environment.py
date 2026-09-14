@@ -8,13 +8,16 @@ from importlib import metadata as importlib_metadata
 import json
 from pathlib import Path
 import platform
-import sys
+import re
+import site
+import sysconfig
 from typing import Any, Mapping
 
 from config.snapshots import canonical_sha256
 
 
-RUNTIME_ENVIRONMENT_IDENTITY_SCHEMA_VERSION = "runtime_environment_identity_v1"
+RUNTIME_ENVIRONMENT_IDENTITY_SCHEMA_VERSION = "runtime_environment_identity_v2"
+_READABLE_SCHEMAS = {"runtime_environment_identity_v1", RUNTIME_ENVIRONMENT_IDENTITY_SCHEMA_VERSION}
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +33,7 @@ class RuntimeEnvironmentIdentity:
     schema_version: str = RUNTIME_ENVIRONMENT_IDENTITY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != RUNTIME_ENVIRONMENT_IDENTITY_SCHEMA_VERSION:
+        if self.schema_version not in _READABLE_SCHEMAS:
             raise ValueError("unsupported runtime environment schema_version: {}".format(self.schema_version))
         for field_name in (
             "python_version",
@@ -60,13 +63,41 @@ class RuntimeEnvironmentIdentity:
         return {**self._identity_payload(), "identity_sha256": self.identity_sha256}
 
 
+def installed_distribution_roots() -> tuple[str, ...]:
+    """Return interpreter installation roots, independent of runtime ``sys.path``.
+
+    ``site`` establishes its prefixes and user-site policy at interpreter startup,
+    including system sites explicitly enabled by a virtual environment. Combine
+    those roots with this interpreter's purelib/platlib installation scheme.
+    Arbitrary import paths (including nested vendor directories) are not installed
+    dependency roots. Paths select metadata; their locations are not hash inputs.
+    """
+    paths = [sysconfig.get_path("purelib"), sysconfig.get_path("platlib"), *site.getsitepackages()]
+    if site.ENABLE_USER_SITE:
+        paths.append(site.getusersitepackages())
+    roots = set()
+    for value in paths:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            raise ValueError("interpreter installation root must be absolute: {}".format(path))
+        roots.add(str(path.resolve()))
+    return tuple(sorted(roots))
+
+
 def capture_runtime_environment_identity(repository_path: Path | str) -> RuntimeEnvironmentIdentity:
-    """Capture the active interpreter/package set and repository lockfile."""
+    """Capture v2 installed dependencies, Python/platform, and lockfile identity.
+
+    Historical v1 artifacts remain readable and retain their original hash, but
+    cannot match a newly captured v2 identity under strict compatibility.
+    """
     repository_root = _resolve_repository_root(Path(repository_path))
-    distributions = sorted(
-        "{}=={}".format(distribution.metadata.get("Name", distribution.name), distribution.version)
-        for distribution in importlib_metadata.distributions()
-    )
+    distributions = sorted({
+        "{}=={}".format(
+            re.sub(r"[-_.]+", "-", distribution.metadata["Name"].strip()).lower(),
+            distribution.version.strip(),
+        )
+        for distribution in importlib_metadata.distributions(path=installed_distribution_roots())
+    })
     installed_distributions_sha256 = canonical_sha256(distributions)
     lock_path = repository_root.joinpath("Pipfile.lock")
     dependency_lock_sha256 = _file_sha256(lock_path) if lock_path.is_file() else canonical_sha256([])
