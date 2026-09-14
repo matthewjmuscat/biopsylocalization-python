@@ -4,9 +4,14 @@
 
 The user-operated five-case anatomical independence gate passed on 2026-09-13
 under clean `b123089`, exact 0/0. Its provenance and limits remain in the
-[anatomical runbook](ANATOMICAL_INDEPENDENCE_RUNBOOK.md). This pass enables
-`biopsy_preprocessing_shadow` with an identically named checkpoint. It adds
-synthetic implementation evidence, **not a real-patient biopsy PASS**.
+[anatomical runbook](ANATOMICAL_INDEPENDENCE_RUNBOOK.md). The standalone
+`biopsy_preprocessing_shadow` pathway and identically named checkpoint are
+implemented. The reference-worker guard is fixed in `2852b72`; the accepted
+projected-centroid extent and endpoint-inclusive reconstruction are frozen in
+`02307c0`. Real-patient geometry characterization for `181 (F2)` is complete and
+reviewed; its temporary reporter and test are retired, with CSV/JSON evidence
+retained outside the repository. **No real-patient biopsy PASS is claimed yet.**
+The next scientific gate is fresh exact paired biopsy preprocessing validation.
 
 The same lightweight parent launches one fresh patient process. The worker
 rehydrates verified `PipelineConfig`, builds only that patient's runtime, and
@@ -17,7 +22,7 @@ attempts, source/config/environment, exact input bytes, stage inventory, resolve
 grid state and numerical products. Sharing algorithms limits this evidence to
 input/execution migration parity.
 
-## Scientific boundary inspected
+## Scientific boundary
 
 | Operation | Inputs and config | Patient-local mutations / evidence |
 | --- | --- | --- |
@@ -34,8 +39,8 @@ inside the patient process; there is no nested pool or full-cohort state.
 `full` uses configured needle length; `match real` uses matched real biopsy
 length, this patient's DIL mean, or the existing full-length fallback. Removed
 `real mean` / `real normal` modes already fail because they derive cohort state.
-Patient dictionaries remain transitional compatibility storage. This pass does
-not create a second mutable product store or serialize those dictionaries.
+Patient dictionaries remain transitional compatibility storage; checkpoints
+retain bounded products rather than serializing runtime dictionaries.
 
 Uncertainty spreadsheet attachment has no standalone producer/input contract
 and remains absent. Realized targeting is still deferred to simulated-biopsy
@@ -43,99 +48,96 @@ finalization. Optimization, transforms, realization, classification, MC and
 guidance remain fail-closed as standalone live pathways. Planning samples here
 are an existing preprocessing product, not later tissue classification.
 
-## Scientific correction: fitted-line samples
+## Reference-worker boundary
 
-The allocation defect identified during the architectural checkpoint `dce3a32`
-is corrected in this separate scientific pass. Real-patient biopsy parity remains
-**pending**. The checkpoint still captures the corrected field at exact 0/0.
+`2852b72` fixes the guard that rejected the first real biopsy pair's reference
+lane before science. That attempt produced no numerical comparison and remains
+retained as failed execution evidence.
 
-### Origin and chosen contract
+`run_patient_anatomical_reference.py` accepts matching pathway/checkpoint pairs
+for `anatomical_qa` and `biopsy_preprocessing_shadow` through the shared
+`preprocessing_boundary` selector. The historical filename remains compatible.
+The reference lane uses independent singleton legacy input construction in a
+fresh worker, followed by the same downstream science and exact 0/0 comparison.
 
-Current-branch history locates the faulty preallocation in `e760db5`
-(2022-12-07), well before the 2026 helper extraction. Its parent main used an
-append loop with 20 intervals and 21 points, including both fitted endpoints.
-The change introduced the 0.1 mm spacing limit and an N-row allocation, but kept
-`samples[-1]` as though it still meant the last appended, initialized point.
-For N > 1 it instead reads the uninitialized final row. This is supported by
-main's history, not merely by the separate prototype or remembered intent.
+## Accepted biopsy geometry
 
-The explicit contract now is: for the existing PCA endpoints A and B, let
-L = ||B − A|| and N = ceil(L / 0.1 mm). Store **N + 1** uniformly spaced points
-on the closed segment [A, B], with both endpoints included and spacing L/N
-at most 0.1 mm, up to floating-point rounding. `np.linspace` initializes every
-element without accumulating predecessor error. Endpoint order follows the
-existing PCA output; this pass does not impose a new anatomical orientation.
+Contour-slice centroids are the observations. PCA determines an **unsigned**
+straight-axis direction; the minimum and maximum centroid projections define
+the straightened axial extent. For centroids c_i, their mean m and PCA unit
+axis u:
 
-This chooses a well-defined fitted-segment representation. It does **not**
-establish that the PCA endpoints are physical biopsy tips. Current
-`pca.linear_fitter` centers the segment at the mean slice centroid and uses the
-maximum **Euclidean radius** from that mean as its symmetric half-length, rather
-than the minimum/maximum projections onto the principal axis. Historical code
-cannot by itself recover the author's scientific rationale for that extent.
+- s_i = (c_i − m) · u.
+- A = m + min(s_i) u; B = m + max(s_i) u.
+- L = max(s_i) − min(s_i).
+- The reconstructed cylinder is a closed physical segment containing A and B.
+- N = ceil(L / 0.1 mm), with N + 1 ring positions, including both endpoints;
+  axial spacing is L/N and cylinder span is L.
 
-### Producer and consumer audit
+`preprocessing/biopsy_processing/fitted_segment.py` owns this shared calculation.
+The existing radius and transverse ring convention are retained.
+**Generic `pca.linear_fitter()` remains unchanged.** The model measures straightened
+centroid extent, not curved tissue length. The stored `Structure global centroid`
+remains the mean of observed centroids and may differ from the cylinder midpoint.
 
-| Route | Use and effect of this correction |
-| --- | --- |
-| Real reconstruction | Both main and patient adapters call the shared finalizer/builder. The stored line samples change. |
-| Planned simulated model | The planner calls the same builder on canonical rings. Its stored line samples change. |
-| Realized simulated reconstruction | Transported contours reach the same finalizer in the legacy pathway. It also receives the fix; this standalone stage is not yet enabled. |
-| Cylinder, Delaunay and volume inputs | Cylinder transport takes the fitted start, travel vector, ring count and radius. It never uses the other stored line samples. Its start is now read directly from the fitted line. Reconstructed points, rotated slices and volume inputs are unchanged. |
-| Length, axis, translation and rotation | Calculated from PCA endpoints/centroids, independently of stored line samples; unchanged. Matched-real planning lengths consequently remain unchanged. |
-| Real and planned volume sampling | `sampling/biopsy_point_sampler.py` uses reconstructed points, Delaunay and rotation. The actual lattice sampler and biopsy-frame transformation were compared numerically; coordinates, bounds and counts are unchanged. |
-| Classification/MC inputs | Sampled-volume arrays and their transformed coordinates feed double-sextant classification, MC preparation and containment. No current reader of stored line-sample rows 1 onward was found on these routes. These inputs were checked; full classification, GPU volume, MC and dosimetry were not executed. |
-| Checkpoints and saved state | The exact checkpoint deliberately retains both real and planned samples. Any historical state retaining this field can contain the faulty array. Old and corrected checkpoints should not be expected to agree on it. |
-| Plotting and historical experiments | `plot_general_per_patient` supports this field through `cbfls`; the tracked call is in the prototype. The prototype also uses samples for KD-tree queries, but has its own append-based producer. The analogous nearest-neighbour block in the December 2022 main is inside a triple-quoted inactive block. These findings do not establish what every historical experiment executed. |
-| Dead duplicate implementations | The real processor archive and simulated processor's `if False` block retain old code. They are inactive and were not turned into additional production algorithms. |
+For this transperineal prostate cohort, the signed biopsy frame runs from lower
+to higher patient Z; in this acquisition, increasing Z is the needle-tip/superior
+direction. This sign comes from the acquisition convention, not PCA or encoded
+tip/base metadata, and is not a universal biopsy rule. Degenerate extent and
+ambiguous equal-endpoint-Z reconstruction fail explicitly. The
+[architecture orientation contract](../architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md#biopsy-geometry-and-orientation-ownership)
+records the future orientation policy and legacy naming/schema debt.
 
-Scope of plausible historical impact: corrupted stored diagnostic arrays,
-displays that consume them, and any external/scratch analysis of those arrays.
-The current inspected production dependencies and the numerical comparisons
-provide no evidence that this defect changed cylinder-based sampling or its
-classification inputs. They do not certify all historic outputs or publications.
+The shared reconstruction builder serves real biopsies, canonical simulated
+planning and later realized simulated reconstruction. Its corrected geometry
+can affect volume/hull inputs, samples, frame origins and downstream
+classification or dose/MR queries. Matched-real simulated lengths also consume
+the corrected real length. Downstream algorithms retain their existing behavior.
+This geometry correction in `02307c0` is separate from the earlier deterministic
+centroid line-sample allocation fix in `ec95d279`.
 
-### Numerical evidence and separate geometry questions
+## Preserved 1 mm analysis semantics
 
-`validation/test_biopsy_geometry_characterization.py` now runs actual NumPy,
-scikit-learn PCA, cylinder transport, Open3D, SciPy Delaunay, the repaired lattice
-sampler, and real/planned sampling wrappers on fabricated contours. Allocation
-residues include 29, 87, −29, NaN and 1e200. Tests enforce finite samples,
-endpoint/count/spacing/collinearity and exact allocation independence.
+Physical reconstruction and the discrete analysis lattice are distinct. The
+current sample spacing and analysis voxel length are both 1 mm. In the signed
+biopsy frame, sample positions 0, 1, 2, … mm represent the 1 mm analysis voxels
+beginning at those positions. Boundary assignment goes upward: z=1 mm belongs
+to voxel 2, labelled [1,2] mm.
 
-The old recurrence is retained only as a test negative control. An additional
-local experiment loaded the **complete committed helper from dce3a32** and
-compared it with the correction, using actual downstream code. Every other
-model numeric field, Delaunay points/connectivity/transforms, convex-hull volume,
-sample coordinates/bounds/count and biopsy-frame sample coordinates matched
-exactly. Representative values below use radius 0.35 mm and sampling step 0.2 mm:
+The physical cylinder includes both endpoints; an exact terminal sample plane
+is excluded. A 2 mm cylinder therefore samples z=0,1 mm. Labelled terminal voxel
+bounds can extend beyond exact physical extent because analysis is quantized at
+1 mm; sample-coordinate range and voxel labels do not redefine cylinder length.
+Sampling, frame transforms, voxelization, tables and plotting are unchanged.
 
-| Fabricated contours | Fitted length (mm) | Cylinder axial span (mm) | Stored line points, old → corrected | Volume sample count |
-| --- | ---: | ---: | ---: | ---: |
-| Axial | 1.000000 | 0.900000 | 10 → 11 | 45 |
-| Oblique | 1.234000 | 1.139077 | 13 → 14 | 54 |
-| Reversed slice order | 1.234000 | 1.139077 | 13 → 14 | 54 |
-| Asymmetric/bent | 1.207845 | 1.114934 | 13 → 14 | 54 |
+Technical note: the existing containment test probes 1e-4 mm forward while
+returning the original sample coordinate, so a plane within that margin below
+the terminal endpoint can also be excluded.
 
-Actual canonical planning at nominal length 1.234 mm also retained all 54
-volume samples exactly. Tests additionally round-trip the corrected real and
-planned line arrays through the checkpoint and detect changes to either field.
-The focused geometry/preprocessing/checkpoint/pair/fixture suite passed 45 tests
-in the installed scientific environment on 2026-09-14. Native imports succeed
-without a GPU here; this is not GPU numerical validation.
+## Completed real-patient characterization
 
-Two related scientific questions remain separate from the allocation fix:
+The old-versus-new geometry characterization for `181 (F2)` has been run and
+reviewed. It compared the old helper at `ec95d279` with the accepted geometry now
+frozen in `02307c0`, using the same retained contour observations and settings.
+The temporary Python reporter and test have been deleted; generated CSV/JSON
+evidence remains outside the repository.
 
-- **Cylinder endpoint coverage:** current transport creates N rings with spacing
-  L/N, so its span is L − L/N, although the stored cylinder-length field is L.
-  The new line-sample count must not be reused as the cylinder ring count
-  incidentally. Adding an endpoint ring changes hull/volume/sampling and warrants
-  a deliberate scientific geometry pass with those outputs compared.
-- **Fitted extent:** in the bent fixture the centroid projection span is
-  1.008890 mm, while the symmetric-radius fitted length is 1.207845 mm. Determine
-  whether the desired domain contract is that existing extent, projected
-  extrema, or independently identified physical endpoints before changing it.
-  Degenerate/very short reconstructions and horizontal-axis handling also need
-  explicit geometry-domain decisions; this pass does not claim to repair them.
+| Biopsy | Old fitted length (mm) | New fitted length (mm) | Difference (mm) | Old → new cylinder span (mm) | Sample/voxel count |
+| --- | --- | --- | --- | --- | --- |
+| Bx_Track RT POST | 15.247336 | 15.135296 | −0.112039 | 15.147680 → 15.135296 | 16 → 16 |
+| Bx_Track LT POST | 17.046430 | 17.023435 | −0.022995 | 16.946743 → 17.023435 | 17 → 18 |
+
+Displayed lengths are rounded to six decimal places; differences are reported directly from the characterization output. The PCA extent
+correction was small in these two biopsies. LT POST's old cylinder physically stopped below the
+17 mm sampling plane despite a nominal fitted length above 17 mm. Reconstruction
+through both fitted endpoints restores that plane: its terminal biopsy-frame
+sample Z changes from 16 to 17 mm, and the sample/voxel count from 17 to 18.
+
+This reviewed characterization supports the accepted geometry; it does not
+establish standalone/reference preprocessing parity. Permanent synthetic tests
+cover geometry invariants, deterministic samples, sampling/voxel integration,
+checkpoint retention and input-content protection. The real paired gate below
+remains outstanding.
 
 ## Checkpoint contract
 
@@ -154,12 +156,13 @@ objects; it never pickles runtime state. A paired PASS requires exact **0/0** an
 the completed-input byte seals. Old anatomical entrypoint names remain compatible;
 the second schema is selected explicitly through the same engine/service.
 
-## User-operated real gate
+## Next user-operated real gate
 
-Review and commit/freeze the fitted-line correction before this gate.
-Use fresh destinations; do not change inputs or source after preparing provenance.
-Environment identity is now v2, so prepare new execution provenance while
-retaining the historical scientific snapshot. Do not rewrite v1 reports.
+The guard repair and geometry correction are frozen, and characterization is
+complete with its temporary source retired. Use fresh destinations and keep
+source and inputs stable after preparing provenance. Prepare new environment-v2
+execution provenance from the retained scientific snapshot; preserve historical
+reports unchanged.
 
 From the repository root:
 
@@ -169,7 +172,7 @@ S="python_files_dcm_meta_based"
 DATA="/home/matthew-muscat/Documents/UBC/Research/Data/Output data"
 SOURCE="$DATA/anatomical_validation_181_F2_2026-09-10"
 DISCOVERY="$DATA/MC_sim_out- Date-Jun-25-2026 Time-11,42,44 - standard-run - inputs-dicom-549_mr-adc-1_mr-t2-0_rtdose-5_rtplan-5_rtstruct-5_us-5/manifests"
-WORK="$DATA/biopsy_preprocessing_centroid_fix_2026-09-14"
+WORK="$DATA/biopsy_preprocessing_projected_extent_2026-09-14"
 
 "$PY" "$S/prepare_patient_scientific_run.py" \
   --scientific-config-snapshot "$SOURCE/provenance/resolved_scientific_config.json" \
@@ -203,9 +206,8 @@ case; do not automatically repeat a five-case scheduling campaign.
 
 ## Optional unequal-prescription fixture and probe
 
-The builder is implemented and tested using entirely fabricated DICOM files.
-No patient-derived fixture was created by the coding agent. Run this locally
-yourself when ready, using the explicit F2 source job prepared above:
+The optional builder is tested using entirely fabricated DICOM files. To create
+a local patient-derived fixture, use the explicit F2 source job prepared above:
 
 ```bash
 SYNTHETIC="/home/matthew-muscat/Documents/UBC/Research/Data/Input data/synthetic set/dose_threshold_v1"
@@ -227,7 +229,7 @@ SYNTHETIC="/home/matthew-muscat/Documents/UBC/Research/Data/Input data/synthetic
   --output-dir "$WORK/synthetic_dose_probe"
 ```
 
-The existing probe can now consume a normal process plan directly, so this
+The probe consumes a normal process plan directly, so this
 mechanism check does not require a full anatomical qualification first. It runs
 the unchanged wrapper in forward/reverse order and singleton-reset controls.
 For prescription sensitivity, the scientific snapshot must have
@@ -258,24 +260,15 @@ Normal recursive discovery sees the files, so work orders
 must explicitly select the desired clinical or synthetic subjects. See
 [input identity and future fixture recommendations](../../python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md).
 
-## Next steps and retirement
+## Progression and retirement
 
-Next scientific work: pass the representative biopsy gate with the corrected
-line samples; resolve the cylinder endpoint/fitted-extent contract as a separate
-geometry slice before treating those lengths as established physical extents.
-Then qualify transform/optimizer producer outputs
-and realized biopsy geometry in bounded slices. Keep classification and guidance
-dependencies grounded in actual required products rather than one fixed workflow.
-
-Next independent architecture slice: extract production defaults/config
-construction from main with exact snapshot equivalence. Follow with aggressive
-removal of replaced main orchestration and typed grid/geometry/biopsy products
-that replace dictionary reads. Discovery duplicate/conflict handling is another
-near-term independent slice. Neither config extraction nor these designs needs
-to wait for a full MC campaign.
+The next gate is the representative exact paired run above, with real and
+simulated biopsy coverage. Further scientific slices and the independent config,
+main, typed-state and discovery migration tracks are recorded in the
+[roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities).
 
 The singleton legacy input adapter, historical checkpoint entrypoint names and
-legacy dose probe remain transitional. Delete them when replacement numerical
-and output gates cover their purposes. Durable content identity, completed
-attempt matching, typed scientific config and bounded numeric artifacts remain
-useful beyond the migration. No legacy sidecar is retired by this pass.
+legacy dose probe remain transitional. Retire them when replacement numerical
+and output gates cover their purposes. Strict content identity, completed-attempt
+matching, typed scientific config and bounded numerical artifacts remain durable
+contracts. The completed geometry characterization tool is already retired.

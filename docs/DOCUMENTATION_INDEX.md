@@ -1,6 +1,6 @@
 # Documentation Index
 
-Last updated: 2026-09-09
+Last updated: 2026-09-14
 
 This is the public map for repository documentation. It separates durable project
 contracts from private scratch notes and generated audit artifacts.
@@ -25,9 +25,9 @@ Current durable docs:
   `AGENTS.md` points coding agents here.
 - `runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md` - forward/reverse/split
   qualification, input content identity, and isolated legacy dose characterization.
-- `runtime/BIOPSY_PREPROCESSING_RUNBOOK.md` - patient-local biopsy boundary,
-  shared checkpoint/pair validation, centroid-sample correction/consumer audit, and reusable
-  synthetic dose fixture commands.
+- `runtime/BIOPSY_PREPROCESSING_RUNBOOK.md` - accepted biopsy geometry, reviewed
+  characterization, exact paired-validation recipe and optional synthetic dose
+  fixtures.
 
 - `architecture/PATIENT_MODULE_TREE_GUIDE.md` - canonical ownership and
   placement guide for patient-level scientific modules and the

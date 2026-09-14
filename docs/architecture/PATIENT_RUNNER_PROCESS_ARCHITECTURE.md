@@ -1,6 +1,6 @@
 # Patient-Runner Process Architecture
 
-Last updated: 2026-09-08
+Last updated: 2026-09-14
 
 This note defines the target execution architecture for moving the patient
 runner outside the legacy all-patient runtime. It is the process and memory
@@ -231,7 +231,7 @@ September 2026 qualification update:
 - `PROJECT_NORTH_STARS.md` records continuing config, main, dictionary-state,
   and composable-pathway migration tracks.
 
-September 2026 biopsy-preprocessing implementation:
+Biopsy-preprocessing execution boundary:
 
 - Environment identity v2 enumerates explicit interpreter installation roots,
   including enabled system/user sites, rather than mutable `sys.path`. Package
@@ -247,11 +247,16 @@ September 2026 biopsy-preprocessing implementation:
   `validation/biopsy_checkpoint_fields.py`. The existing paired service reuses
   byte ledgers, successful-attempt matching, strict provenance and exact 0/0
   comparison. No second runner or validation framework was introduced.
-- Synthetic mechanism/contract evidence is not a real biopsy PASS. The allocation
-  defect found in this migration was subsequently corrected in a separately
-  authorized scientific pass, preserving cylinder geometry and sampling. The
-  consumer audit, remaining endpoint/extent questions and user gate are in
-  `../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md`.
+- The shared reference-worker selector accepts matching pathway/checkpoint pairs
+  for `anatomical_qa` and `biopsy_preprocessing_shadow`. Each reference attempt
+  independently constructs singleton legacy input state in a fresh worker before
+  invoking the same scientific stages. This comparison establishes input and
+  execution migration parity; sharing algorithms does not independently validate
+  their scientific definitions.
+- Current evidence and user-operated gate instructions belong in the
+  [biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md); migration status and
+  future work belong in the
+  [roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities).
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner
@@ -279,6 +284,33 @@ The target primary runner should not require
 exist for the full cohort. Legacy-shaped dictionaries may still exist inside a
 single worker while a migrated stage needs them, but that state should be
 patient-local and process-local.
+
+## Biopsy geometry and orientation ownership
+
+The scientific reconstruction module owns the physical biopsy segment:
+contour-slice centroids are observations, PCA determines an unsigned straight
+axis, and minimum/maximum centroid projections define its extent. Reconstruction
+includes both fitted endpoints. The discrete analysis lattice and voxel labels
+are separate downstream products and do not redefine that physical extent.
+Generic PCA helpers retain their existing contracts for other callers.
+
+PCA supplies no needle-tip/base sign. For the current transperineal prostate
+cohort, the signed frame is resolved from lower toward higher patient Z; in this
+acquisition, increasing Z corresponds to the needle-tip/superior direction. This
+is an acquisition-specific convention, not a universal biopsy rule or tip/base
+metadata encoded in the input geometry.
+
+Future generalization should make signed-axis resolution an explicit
+acquisition/biopsy orientation policy, separate from PCA fitting. Possible sources
+include a patient-axis convention or encoded landmarks/vector metadata. When no
+defensible sign exists, the axis should remain explicitly unoriented; workflows
+requiring signed coordinates must fail explicitly if orientation cannot be
+established. This policy is a future contract, not an implemented capability.
+
+Historical dictionary keys containing `bx needle base to bx needle tip` are
+naming/schema migration debt: current input geometry does not directly encode
+those landmarks. The names remain compatibility fields until a deliberate schema
+migration can distinguish unsigned geometry from resolved acquisition orientation.
 
 ## Paired Oracle And Standalone Runs
 
@@ -514,9 +546,9 @@ which patient objects or input files feed the scientific stages. Phase 7 can
 silently change defaults. Both should be split into small, reviewable passes
 with explicit before/after config or manifest evidence.
 
-Phase 4 anatomical input-migration and tested scheduling gates have passed.
-The biopsy-preprocessing extension now has synthetic implementation evidence;
-its separately documented user gate controls further scientific progression.
+Use the [roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities)
+for current qualification status and the linked runbooks for evidence and
+operational gate instructions.
 
 Recommended validation cadence:
 

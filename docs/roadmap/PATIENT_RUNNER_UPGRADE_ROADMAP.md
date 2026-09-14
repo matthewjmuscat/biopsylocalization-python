@@ -1,6 +1,6 @@
 # Patient Runner Upgrade Roadmap
 
-Last updated: 2026-06-05
+Last updated: 2026-09-14
 
 This document is the durable, public planning surface for the migration from the
 legacy all-patient monolith toward a validated per-patient runner. It should hold
@@ -23,16 +23,28 @@ not permanent reproduction of the main sequence.
 - **Next independent architecture slice:** extract production config/default
   construction from main with exact snapshot equivalence. Avoid a second config
   model and avoid treating patient validation as a reason to postpone all cleanup.
-- **Implemented, scientific gate pending:** standalone biopsy preprocessing with
-  bounded numerical products and the existing paired validator. The separate
-  fitted-line sample correction has synthetic numerical evidence; run a
-  representative paired case with real and simulated biopsies. Cylinder endpoint
-  coverage and PCA extent semantics need a distinct scientific geometry decision.
-  [Biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md) records the limits.
-- **Next scientific gate:** transform generation/optimizer producer inputs and
-  outputs, followed by realized biopsy geometry and classification in explicit
+- **Biopsy geometry accepted; paired gate pending:** reference-worker guard
+  repair is frozen in `2852b72`; projected-centroid extent and reconstruction
+  through both endpoints are frozen in `02307c0`. The earlier allocation fix is
+  separate. Characterization of real patient `181 (F2)` is complete and reviewed;
+  its temporary reporter/test are retired, and external CSV/JSON evidence is
+  retained. **No real-patient biopsy PASS yet.**
+- **Next user-operated scientific gate:** fresh exact paired biopsy preprocessing
+  validation with real and simulated biopsy coverage. The
+  [biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
+  contains the accepted geometry, reviewed results and execution recipe.
+- **Following scientific slices:** transform generation/optimizer producer inputs
+  and outputs, then realized biopsy geometry and classification in explicit
   dependency-valid slices. Do not treat the current coarse DAG as a permanent
   requirement that every guidance/classification workflow run optimization or MC.
+- **Future orientation and schema migration:** make acquisition/biopsy orientation
+  explicit, preserve an unoriented axis when no defensible sign exists, and fail
+  workflows that require an unavailable sign. Migrate historical
+  `bx needle base to bx needle tip` dictionary names alongside typed biopsy
+  contracts. The acquisition-specific convention, possible orientation sources
+  and ownership are defined in the
+  [architecture contract](../architecture/PATIENT_RUNNER_PROCESS_ARCHITECTURE.md#biopsy-geometry-and-orientation-ownership);
+  policy implementation and field renaming remain future work.
 - **Near-term independent input slice:** replace last-path-wins discovery with
   SOP identity/content conflict handling and provenance aliases. The exact-file
   execution ledger is not the deduplication model; see
