@@ -22,7 +22,9 @@ The anatomical independence gate passed on five real cases at clean `b123089`.
 The next [biopsy preprocessing runbook](../../docs/runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
 documents `validate_patient_preprocessing.py`, which extends the existing paired
 service/checkpoint engine, and the user-operated synthetic dose fixture builder.
-Real biopsy parity is pending; the known centroid-sampling defect remains explicit.
+Real biopsy parity is pending. The separately corrected fitted-line samples have
+numerical regression coverage; the runbook records their consumer audit and the
+remaining cylinder endpoint/PCA extent questions.
 
 ## Quick Start
 

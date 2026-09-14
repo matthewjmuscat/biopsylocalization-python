@@ -38,14 +38,11 @@ def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zs
     centroid_line = pca.linear_fitter(structure_centroids_array.T)
     centroid_line_length = np.linalg.norm(centroid_line[0, :] - centroid_line[1, :])
     slice_reconstruction_max_distance = 0.1
-    num_centroid_samples_of_centroid_line = int(math.ceil(centroid_line_length / slice_reconstruction_max_distance))
-    centroid_line_sample = np.empty((num_centroid_samples_of_centroid_line, 3), dtype=float)
-    centroid_line_sample[0, :] = centroid_line[0, :]
-    travel_vec = np.array([centroid_line[1] - centroid_line[0]]) * 1 / num_centroid_samples_of_centroid_line
-    for index in range(1, num_centroid_samples_of_centroid_line):
-        init_point = centroid_line_sample[-1]
-        new_point = init_point + travel_vec
-        centroid_line_sample[index] = new_point
+    num_centroid_line_intervals = int(math.ceil(centroid_line_length / slice_reconstruction_max_distance))
+    # Sample the closed fitted segment in mm: N intervals require N + 1 points.
+    # These are fitted-line samples, not independently measured physical tips.
+    centroid_line_sample = np.linspace(centroid_line[0], centroid_line[1], num_centroid_line_intervals + 1)
+    travel_vec = np.array([centroid_line[1] - centroid_line[0]]) * 1 / num_centroid_line_intervals
 
     line_start = centroid_line[0, :]
     line_end = centroid_line[1, :]
@@ -58,12 +55,14 @@ def build_reconstructed_biopsy_model_for_sampling_from_zslice_list(threeDdata_zs
     maximum_2d_distance_between_centroids = biopsy_creator.distance_of_most_distant_points_2d_projection(structure_centroids_array, travel_vec)
 
     list_travel_vec = np.squeeze(travel_vec).tolist()
-    list_centroid_line_first_point = np.squeeze(centroid_line_sample[0]).tolist()
+    list_centroid_line_first_point = np.squeeze(centroid_line[0]).tolist()
     biopsy_reconstructed_cyl_z_length_from_contour_data = centroid_line_length
     drawn_biopsy_array_transpose = biopsy_creator.biopsy_points_creater_by_transport(
         list_travel_vec,
         list_centroid_line_first_point,
-        num_centroid_samples_of_centroid_line,
+        # Preserve the existing N-ring cylinder (span L - L/N). Changing its
+        # endpoint coverage is a separate geometry change, not this sample fix.
+        num_centroid_line_intervals,
         np.linalg.norm(travel_vec),
         biopsy_radius,
         False,

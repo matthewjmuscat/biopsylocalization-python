@@ -247,10 +247,11 @@ September 2026 biopsy-preprocessing implementation:
   `validation/biopsy_checkpoint_fields.py`. The existing paired service reuses
   byte ledgers, successful-attempt matching, strict provenance and exact 0/0
   comparison. No second runner or validation framework was introduced.
-- Synthetic mechanism/contract evidence is not a real biopsy PASS. The existing
-  centroid-sampling allocation defect and user gate are documented in
-  `../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md`; no scientific fix is folded into
-  this behavior-preserving migration without an explicit decision.
+- Synthetic mechanism/contract evidence is not a real biopsy PASS. The allocation
+  defect found in this migration was subsequently corrected in a separately
+  authorized scientific pass, preserving cylinder geometry and sampling. The
+  consumer audit, remaining endpoint/extent questions and user gate are in
+  `../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md`.
 
 The long-term removal path should be conservative. First, make both legacy hooks
 default to disabled for ordinary legacy runs. Second, move new patient-runner

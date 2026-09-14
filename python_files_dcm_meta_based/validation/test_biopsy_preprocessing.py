@@ -3,7 +3,7 @@
 Actual patient target/multiplicity/length preparation and planning orchestration
 run. Native reconstruction and containment are deterministic substitutes, not
 claimed algorithm truth. The separate geometry characterization tests the real
-reconstruction helper's existing allocation defect.
+reconstruction helper's corrected fitted-line samples and downstream geometry.
 """
 
 from contextlib import contextmanager
@@ -215,6 +215,8 @@ class BiopsyPreprocessingTests(unittest.TestCase):
             reference = self.capture(root, "reference", prepared_runtime())
             for index, mutate in enumerate((
                 lambda records: records[0]["Reconstructed structure pts arr"].__setitem__((0, 0), 0.2),
+                lambda records: records[0]["Centroid line sample pts"].__setitem__((0, 0), 0.2),
+                lambda records: records[1]["Simulated biopsy planning dict"]["Planned reconstructed biopsy model dict"]["Centroid line sample pts"].__setitem__((0, 0), 0.2),
                 lambda records: records[1]["Simulated biopsy planning dict"]["Planned sampled volume pts arr"].__setitem__((0, 0), 0.2),
                 lambda records: records[1]["Simulated biopsy preparation dict"].__setitem__("Length source", "changed"),
             )):

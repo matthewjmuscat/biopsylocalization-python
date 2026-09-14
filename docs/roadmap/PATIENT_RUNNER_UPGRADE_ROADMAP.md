@@ -24,9 +24,10 @@ not permanent reproduction of the main sequence.
   construction from main with exact snapshot equivalence. Avoid a second config
   model and avoid treating patient validation as a reason to postpone all cleanup.
 - **Implemented, scientific gate pending:** standalone biopsy preprocessing with
-  bounded numerical products and the existing paired validator. Resolve the
-  documented centroid-sampling defect before interpreting exact biopsy parity;
-  then run a representative paired case with real and simulated biopsies.
+  bounded numerical products and the existing paired validator. The separate
+  fitted-line sample correction has synthetic numerical evidence; run a
+  representative paired case with real and simulated biopsies. Cylinder endpoint
+  coverage and PCA extent semantics need a distinct scientific geometry decision.
   [Biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md) records the limits.
 - **Next scientific gate:** transform generation/optimizer producer inputs and
   outputs, followed by realized biopsy geometry and classification in explicit
