@@ -1,7 +1,7 @@
 """Validation-only singleton input adapter and preprocessing checkpoint hooks.
 
 The legacy input lane calls the unchanged cohort input builder with one patient.
-Both lanes subsequently use the same established anatomical stage adapters: this
+Both lanes subsequently use the same established preprocessing stage adapters: this
 checks input migration and execution parity, not independent algorithm truth.
 """
 
@@ -74,7 +74,7 @@ def with_anatomical_checkpoint(stages: tuple, pipeline_config: Any) -> tuple:
 
 
 def with_preprocessing_checkpoint(stages: tuple, pipeline_config: Any, *, checkpoint_name: str) -> tuple:
-    """Decorate the anatomical stage with fail-closed, opt-in evidence writing.
+    """Decorate the selected preprocessing stage with opt-in evidence writing.
 
     Checkpoint files are validation evidence, not cohort dataframe fragments.
     Capture errors fail the stage through the existing runner error handling.
