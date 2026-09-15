@@ -42,8 +42,8 @@ Current durable docs:
   assumptions.
 - `input/INPUT_DATA_MANIFEST_DESIGN.md` - provenance/manifest design for input
   discovery.
-- `architecture/CONFIG_LAYER_REWRITE_PLAN.md` - future configuration-layer
-  direction.
+- `architecture/CONFIG_LAYER_REWRITE_PLAN.md` - production config ownership,
+  future shared option introspection, and configuration migration direction.
 - `architecture/PATIENT_RUNNER_CONFIG_PATHWAYS.md` - current config-pathway
   inventory and debug-subgroup rewrite map for patient-runner/scientific-shadow
   config work.

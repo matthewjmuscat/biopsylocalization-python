@@ -10,8 +10,16 @@ implemented. The reference-worker guard is fixed in `2852b72`; the accepted
 projected-centroid extent and endpoint-inclusive reconstruction are frozen in
 `02307c0`. Real-patient geometry characterization for `181 (F2)` is complete and
 reviewed; its temporary reporter and test are retired, with CSV/JSON evidence
-retained outside the repository. **No real-patient biopsy PASS is claimed yet.**
-The next scientific gate is fresh exact paired biopsy preprocessing validation.
+retained outside the repository.
+
+**Representative real-patient biopsy-preprocessing migration PASS:** `181 (F2)`,
+exact 0/0, using clean `24ae3c7258e2421f0444324c2da06d71ab9c1c50`.
+Both fresh subprocess lanes succeeded (exit 0), resolved state passed, and
+coverage was complete: 2 real and 9 simulated biopsy records, 11 preparation-table
+rows, with no missing required fields. The `biopsy_preprocessing_pair_v1` report
+compared 4,626 numeric arrays and 19,235,728 values. This establishes checkpoint
+input/execution migration parity; independent scientific interpretation rests
+on the accepted geometry, reviewed characterization and invariant tests.
 
 The same lightweight parent launches one fresh patient process. The worker
 rehydrates verified `PipelineConfig`, builds only that patient's runtime, and
@@ -136,8 +144,8 @@ sample Z changes from 16 to 17 mm, and the sample/voxel count from 17 to 18.
 This reviewed characterization supports the accepted geometry; it does not
 establish standalone/reference preprocessing parity. Permanent synthetic tests
 cover geometry invariants, deterministic samples, sampling/voxel integration,
-checkpoint retention and input-content protection. The real paired gate below
-remains outstanding.
+checkpoint retention and input-content protection. The separate real paired
+migration gate has now passed as recorded above.
 
 ## Checkpoint contract
 
@@ -156,13 +164,14 @@ objects; it never pickles runtime state. A paired PASS requires exact **0/0** an
 the completed-input byte seals. Old anatomical entrypoint names remain compatible;
 the second schema is selected explicitly through the same engine/service.
 
-## Next user-operated real gate
+## Paired validation recipe
 
-The guard repair and geometry correction are frozen, and characterization is
-complete with its temporary source retired. Use fresh destinations and keep
-source and inputs stable after preparing provenance. Prepare new environment-v2
-execution provenance from the retained scientific snapshot; preserve historical
-reports unchanged.
+The representative gate has passed. Retain this recipe for a future change that
+requires renewed biopsy-boundary validation; production-config extraction alone
+is covered by exact config/readback equivalence and focused tests. When repeating,
+choose a new `WORK` destination and keep source and inputs stable after preparing
+provenance. Prepare new environment-v2 execution provenance from the retained
+scientific snapshot; preserve historical reports unchanged.
 
 From the repository root:
 
@@ -262,9 +271,10 @@ must explicitly select the desired clinical or synthetic subjects. See
 
 ## Progression and retirement
 
-The next gate is the representative exact paired run above, with real and
-simulated biopsy coverage. Further scientific slices and the independent config,
-main, typed-state and discovery migration tracks are recorded in the
+The representative exact paired gate is complete. Next scientific work concerns
+transform/optimizer producer contracts and subsequently realized biopsy geometry.
+These slices and the independent config, main, typed-state and discovery tracks
+are recorded in the
 [roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities).
 
 The singleton legacy input adapter, historical checkpoint entrypoint names and

@@ -19,13 +19,13 @@ is a separate disposable legacy characterization tool. Neither enables later
 scientific pathways or replaces full-output/sidecar validation.
 
 The anatomical independence gate passed on five real cases at clean `b123089`.
-For the next gate, use the
-[biopsy preprocessing runbook](../../docs/runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
-and its `validate_patient_preprocessing.py` recipe. The reference guard repair
-(`2852b72`) and accepted geometry (`02307c0`) are frozen; real-patient geometry
-characterization is reviewed and its temporary tool/test retired. Fresh exact
-paired biopsy preprocessing validation remains pending: **no real-patient biopsy
-PASS yet**. The runbook also covers optional synthetic dose fixtures.
+The representative biopsy-preprocessing migration gate also passed: `181 (F2)`
+at clean `24ae3c7`, exact 0/0, both fresh subprocess lanes successful, with complete
+coverage of 2 real and 9 simulated biopsies. This proves checkpoint input/execution
+migration parity, not independent scientific truth. The
+[biopsy runbook](../../docs/runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
+retains the accepted geometry, reviewed characterization, paired-validation
+recipe and optional synthetic dose fixtures.
 
 ## Quick Start
 

@@ -20,20 +20,20 @@ not permanent reproduction of the main sequence.
   dose probe did not complete because environment v1 depended on import order;
   environment v2 now fixes that provenance mechanism. See
   [the runbook](../runtime/ANATOMICAL_INDEPENDENCE_RUNBOOK.md).
-- **Next independent architecture slice:** extract production config/default
-  construction from main with exact snapshot equivalence. Avoid a second config
-  model and avoid treating patient validation as a reason to postpone all cleanup.
-- **Biopsy geometry accepted; paired gate pending:** reference-worker guard
-  repair is frozen in `2852b72`; projected-centroid extent and reconstruction
-  through both endpoints are frozen in `02307c0`. The earlier allocation fix is
-  separate. Characterization of real patient `181 (F2)` is complete and reviewed;
-  its temporary reporter/test are retired, and external CSV/JSON evidence is
-  retained. **No real-patient biopsy PASS yet.**
-- **Next user-operated scientific gate:** fresh exact paired biopsy preprocessing
-  validation with real and simulated biopsy coverage. The
+- **Completed config ownership slice:** `config/production.py` constructs the
+  existing `PipelineConfig`; main consumes it or an explicitly supplied typed
+  config. Scientific and full config payloads match the pre-change main exactly,
+  and scientific snapshot rehydration is exact. No repeat patient campaign is
+  needed for this ownership-only change. See the
+  [config plan](../architecture/CONFIG_LAYER_REWRITE_PLAN.md) for ownership and
+  the [remaining-config inventory](../architecture/PATIENT_RUNNER_CONFIG_PATHWAYS.md#remaining-config-inventory).
+- **Validated biopsy boundary:** representative `181 (F2)` passed exact 0/0 at
+  clean `24ae3c7`, with both fresh subprocess lanes successful and complete
+  coverage of 2 real plus 9 simulated biopsies. This establishes input/execution
+  migration parity, not independent scientific truth. The
   [biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
-  contains the accepted geometry, reviewed results and execution recipe.
-- **Following scientific slices:** transform generation/optimizer producer inputs
+  retains the accepted geometry, reviewed characterization and repeatable recipe.
+- **Next scientific slices:** transform generation/optimizer producer inputs
   and outputs, then realized biopsy geometry and classification in explicit
   dependency-valid slices. Do not treat the current coarse DAG as a permanent
   requirement that every guidance/classification workflow run optimization or MC.
@@ -49,6 +49,14 @@ not permanent reproduction of the main sequence.
   SOP identity/content conflict handling and provenance aliases. The exact-file
   execution ledger is not the deduplication model; see
   [DICOM input shape](../../python_files_dcm_meta_based/input_data/DICOM_INPUT_SHAPE.md).
+- **Next independent architecture slice:** select one existing typed grid/geometry
+  product boundary, replace its legacy dictionary reads and remove the superseded
+  main responsibility. Preserve numerical products and use a focused gate where
+  runtime construction changes; do not build another state store.
+- **Future config adapters:** shared option metadata must belong to the typed
+  contract and expose resolved production defaults to TOML, CLI and GUI/API.
+  Scientific TOML and introspection remain future work; see the
+  [discoverability contract](../architecture/CONFIG_LAYER_REWRITE_PLAN.md#future-config-discoverability-and-introspection).
 - **Continuing state/main migration:** replace master reference/info dictionary
   access with typed grid/geometry and later biopsy products at validated
   boundaries; delete replaced main responsibilities rather than maintaining two
