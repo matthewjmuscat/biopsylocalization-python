@@ -88,7 +88,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--launch-workers",
         action="store_true",
-        help="Launch workers for anatomical_qa or biopsy_preprocessing_shadow with a matching checkpoint.",
+        help="Launch workers for anatomical_qa, biopsy_preprocessing_shadow or optimization_shadow with a matching checkpoint.",
     )
     parser.add_argument("--capture-input-content", action="store_true",
                         help="Bind declared input file bytes to jobs and verify them before/after execution.")

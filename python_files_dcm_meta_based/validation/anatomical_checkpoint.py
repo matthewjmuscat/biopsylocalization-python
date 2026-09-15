@@ -6,8 +6,9 @@ It owns NPZ/JSON evidence and comparison, not orchestration or parity approval.
 Coordinates retain DICOM patient millimetres; other quantities retain the units
 specified by each field. No alignment, sorting of points, or rescaling occurs.
 The historical anatomical entrypoint names remain compatible. An explicit
-``checkpoint_name`` selects the second bounded biopsy schema, which adds fields
-through biopsy_checkpoint_fields while reusing integrity and comparison logic.
+``checkpoint_name`` selects bounded biopsy or optimization extensions while
+reusing integrity and comparison logic. Optimization adds explicit transform,
+optimizer and producer evidence through optimization_checkpoint_fields.
 """
 
 from __future__ import annotations
@@ -295,7 +296,8 @@ def _capture_modalities(capture: _Capture, patient: Mapping, refs: Any) -> None:
             capture.field([role, cloud_key], _points_spec(cloud_key), _member(store.get(cloud_key), "points"))
 
 
-def _capture_tables(capture: _Capture, patient: Mapping, refs: Any, *, include_biopsies: bool = False) -> None:
+def _capture_tables(capture: _Capture, patient: Mapping, refs: Any, *, include_biopsies: bool = False,
+                    include_optimization: bool = False) -> None:
     all_ref = _mapping(patient.get(refs.all_ref_key))
     tables = _mapping(all_ref.get(_KEYS.patient_all_reference.preprocessing_output_dataframes_key))
     for name in _PATIENT_TABLES:
@@ -303,6 +305,11 @@ def _capture_tables(capture: _Capture, patient: Mapping, refs: Any, *, include_b
     if any(not isinstance(name, str) for name in tables):
         raise TypeError("patient preprocessing table names must be strings")
     included = set(_PATIENT_TABLES) | ({"Simulated biopsy preparation dataframe"} if include_biopsies else set())
+    if include_optimization:
+        from .optimization_checkpoint_fields import V2_TABLES, OPTIMIZER_V1_MULTI_STRUCTURE_PREPROCESSING_KEYS
+
+        included.update(V2_TABLES)
+        included.update(OPTIMIZER_V1_MULTI_STRUCTURE_PREPROCESSING_KEYS)
     excluded = tuple(sorted(set(tables) - included))
     capture.field(["table_exclusions"], AnatomicalFieldSpec("unlisted patient table names", "label"), excluded)
 
@@ -338,7 +345,8 @@ def _validate_array(array: np.ndarray, contract: Mapping[str, Any]) -> None:
         raise TypeError("mesh triangle indices must have integer dtype")
 
 
-def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray], *, include_biopsies: bool = False) -> dict[str, Any]:
+def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray], *, include_biopsies: bool = False,
+              optimization_config=None, patient_uid=None) -> dict[str, Any]:
     structures: dict[tuple[str, ...], dict[str, Any]] = {}
     invalid_geometry = []
     for item in items:
@@ -381,6 +389,12 @@ def _coverage(items: list[dict[str, Any]], arrays: Mapping[str, np.ndarray], *, 
         result["biopsies"] = biopsy_coverage(items, arrays)
         result["exclusions"].remove("biopsies")
         result["exclusions"].extend(["optimizer/realization/classification/MC/guidance products", "uncertainty spreadsheet attachment"])
+    if optimization_config is not None:
+        from .optimization_checkpoint_fields import optimization_coverage
+
+        result["optimization"] = optimization_coverage(items, arrays, optimization_config, patient_uid)
+        result["exclusions"].remove("optimizer/realization/classification/MC/guidance products")
+        result["exclusions"].extend(["realization/classification/MC/guidance stages", "optimizer caches", "listed v2 timing columns"])
     return result
 
 
@@ -398,10 +412,10 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
         stream.write(text)
 
 
-def _validate_inventory(manifest: Mapping[str, Any]) -> None:
+def _validate_inventory(manifest: Mapping[str, Any], *, optimization_config=None) -> None:
     families = manifest["families"]
     refs = manifest["reference_keys"]
-    include_biopsies = manifest["schema_version"] == "biopsy_preprocessing_checkpoint_v1"
+    include_biopsies = manifest["schema_version"] in ("biopsy_preprocessing_checkpoint_v1", "optimization_checkpoint_v1")
     reference_names = {"dose_ref", "mr_adc_ref", "all_ref_key"} | ({"bx_ref"} if include_biopsies else set())
     if set(families) != set(_FAMILY_ATTRIBUTES) or set(refs) != reference_names:
         raise ValueError("reference key schema mismatch")
@@ -431,6 +445,10 @@ def _validate_inventory(manifest: Mapping[str, Any]) -> None:
         from .biopsy_checkpoint_fields import expected_biopsy_inventory
 
         expected_biopsy_inventory(expected, items)
+    if optimization_config is not None:
+        from .optimization_checkpoint_fields import expected_optimization_inventory
+
+        expected_optimization_inventory(expected, items, optimization_config)
     contracts = {tuple(item["path"]): item["contract"] for item in expected.items}
     for path, contract in list(contracts.items()):
         item = items[path]
@@ -498,6 +516,7 @@ def write_anatomical_checkpoint(
     *, runtime_state: Any, pipeline_config: Any, output_dir: Path,
     metadata: Mapping | None = None,
     checkpoint_name: str = "anatomical_qa",
+    optimization_state: Mapping | None = None,
 ) -> Path:
     """Capture one completed patient into a fresh directory; return its manifest.
 
@@ -519,7 +538,8 @@ def write_anatomical_checkpoint(
     coordinates retain their canonical local frame, not the DICOM patient frame.
     """
     boundary = preprocessing_boundary(checkpoint_name)
-    include_biopsies = checkpoint_name == "biopsy_preprocessing_shadow"
+    include_biopsies = checkpoint_name in ("biopsy_preprocessing_shadow", "optimization_shadow")
+    optimization_config = pipeline_config if checkpoint_name == "optimization_shadow" else None
     snapshot = build_pipeline_scientific_config_snapshot(pipeline_config)
     if metadata is not None and not isinstance(metadata, Mapping):
         raise TypeError("metadata must be a mapping")
@@ -545,12 +565,20 @@ def write_anatomical_checkpoint(
                 raise TypeError("structure record must be a mapping")
             _capture_structure(capture, ["structures", family, str(index)], record)
     _capture_modalities(capture, patient, refs)
-    _capture_tables(capture, patient, refs, include_biopsies=include_biopsies)
+    _capture_tables(capture, patient, refs, include_biopsies=include_biopsies,
+                    include_optimization=optimization_config is not None)
     if include_biopsies:
         from .biopsy_checkpoint_fields import capture_biopsies
 
         capture_biopsies(capture, patient, refs)
-    coverage = _coverage(capture.items, capture.arrays, include_biopsies=include_biopsies)
+    if optimization_config is not None:
+        from .optimization_checkpoint_fields import capture_optimization
+
+        capture_optimization(capture, patient, pipeline_config, optimization_state or {})
+    coverage = _coverage(capture.items, capture.arrays, include_biopsies=include_biopsies,
+                         optimization_config=optimization_config, patient_uid=patient_uid)
+    if optimization_config is not None and not coverage["optimization"]["complete"]:
+        raise ValueError("incomplete optimization evidence: " + str(coverage["optimization"]))
     if include_biopsies and not coverage["biopsies"]["complete"]:
         raise ValueError("incomplete biopsy preprocessing evidence: " + str(coverage["biopsies"]))
     if not coverage["geometry_complete"]:
@@ -570,7 +598,7 @@ def write_anatomical_checkpoint(
         "coverage": coverage,
         "arrays_file": boundary.arrays_name,
     }
-    _validate_inventory(manifest)
+    _validate_inventory(manifest, optimization_config=optimization_config)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     arrays_path = output_dir / boundary.arrays_name
@@ -585,7 +613,7 @@ def write_anatomical_checkpoint(
 
 def _load_checkpoint(path: Path, *, checkpoint_name: str = "anatomical_qa") -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     boundary = preprocessing_boundary(checkpoint_name)
-    include_biopsies = checkpoint_name == "biopsy_preprocessing_shadow"
+    include_biopsies = checkpoint_name in ("biopsy_preprocessing_shadow", "optimization_shadow")
     with Path(path).open(encoding="utf-8") as stream:
         manifest = json.load(stream)
     if not isinstance(manifest, dict) or manifest.get("schema_version") != boundary.schema_version:
@@ -630,8 +658,16 @@ def _load_checkpoint(path: Path, *, checkpoint_name: str = "anatomical_qa") -> t
             raise ValueError("present numeric field is missing its payload")
     if len(set(payloads)) != len(payloads) or set(payloads) != set(arrays):
         raise ValueError("NPZ inventory does not match manifest")
-    _validate_inventory(manifest)
-    coverage = _coverage(manifest["items"], arrays, include_biopsies=include_biopsies)
+    optimization_config = None
+    if checkpoint_name == "optimization_shadow":
+        from config.rehydration import rehydrate_pipeline_scientific_config_snapshot
+
+        optimization_config = rehydrate_pipeline_scientific_config_snapshot(PipelineConfigSnapshot(**manifest["scientific_config"]))
+    _validate_inventory(manifest, optimization_config=optimization_config)
+    coverage = _coverage(manifest["items"], arrays, include_biopsies=include_biopsies,
+                         optimization_config=optimization_config, patient_uid=manifest["patient_uid"])
+    if optimization_config is not None and not coverage["optimization"]["complete"]:
+        raise ValueError("incomplete optimization evidence")
     if include_biopsies and not coverage["biopsies"]["complete"]:
         raise ValueError("incomplete biopsy preprocessing evidence")
     if coverage != manifest["coverage"] or not coverage["geometry_complete"]:
@@ -722,6 +758,8 @@ def compare_anatomical_checkpoints(
     not authenticity or source/input/environment content identity.
     """
     boundary = preprocessing_boundary(checkpoint_name)
+    if checkpoint_name == "optimization_shadow" and (abs_tol != 0 or rel_tol != 0):
+        raise ValueError("optimization migration comparison requires exact abs_tol=0, rel_tol=0")
     for tolerance in (abs_tol, rel_tol):
         if isinstance(tolerance, bool) or not isinstance(tolerance, Real) or not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError("tolerances must be finite nonnegative numbers")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence, TYPE_CHECKING
+from config.uncertainty import UncertaintyPreparationConfig
 
 if TYPE_CHECKING:
     from biopsy_optimizer.v1.per_patient import OptimizerV1LegacyConfig
@@ -481,6 +482,15 @@ class PatientDoubleSextantClassificationStageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientUncertaintyPreparationStageConfig:
+    """Generated uncertainty policy and component registry for one patient."""
+
+    policy: UncertaintyPreparationConfig
+    structs_referenced_list: Sequence[str]
+    structs_referenced_dict: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class PatientUncertaintyAttachmentStageConfig:
     """Config for attaching a resolved uncertainty dataframe to one patient."""
 
@@ -523,9 +533,12 @@ class PatientPreprocessingScientificConfig:
     simulated_biopsy_planning: PatientSimulatedBiopsyPlanningStageConfig | None = None
     realized_biopsy_targeting: PatientRealizedBiopsyTargetingStageConfig | None = None
     uncertainty_attachment: PatientUncertaintyAttachmentStageConfig | None = None
+    uncertainty_preparation: PatientUncertaintyPreparationStageConfig | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.uncertainty_attachment is not None and self.uncertainty_preparation is not None:
+            raise ValueError("choose generated uncertainty preparation or resolved dataframe attachment")
         object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
@@ -535,6 +548,7 @@ class PatientPreprocessingScientificConfig:
             for step in (
                 self.real_biopsy_processing,
                 self.uncertainty_attachment,
+                self.uncertainty_preparation,
                 self.simulated_biopsy_preparation,
                 self.simulated_biopsy_planning,
                 self.realized_biopsy_targeting,

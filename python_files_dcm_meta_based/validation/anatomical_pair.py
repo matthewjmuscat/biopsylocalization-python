@@ -4,7 +4,7 @@ This service executes patient data only when invoked explicitly by the user.
 Both lanes retain identical input roles and science, but build state independently.
 It does not claim independence of shared scientific algorithms or cohort order.
 The original public function name is retained for existing anatomical callers;
-an explicit checkpoint selects the biopsy extension of the same service.
+an explicit checkpoint selects biopsy or optimization evidence in the same service.
 """
 
 from __future__ import annotations
@@ -37,11 +37,19 @@ def run_anatomical_pair(*, job_path: Path, output_dir: Path, abs_tol: float, rel
     source = load_patient_worker_job(job_path)
     if source.pathway_name != checkpoint_name or source.checkpoint_name != checkpoint_name:
         raise ValueError("paired validation requires matching pathway/checkpoint: " + checkpoint_name)
-    if checkpoint_name == "biopsy_preprocessing_shadow":
+    if checkpoint_name == "optimization_shadow":
+        from config.rehydration import rehydrate_pipeline_scientific_config_snapshot
+        from patient_runner.optimization_execution import resolve_fixed_optimization_execution
+
+        if abs_tol != 0 or rel_tol != 0:
+            raise ValueError("optimization paired validation requires exact abs_tol=0, rel_tol=0")
+        resolve_fixed_optimization_execution(
+            rehydrate_pipeline_scientific_config_snapshot(source.scientific_config_snapshot_path))
+    if checkpoint_name in ("biopsy_preprocessing_shadow", "optimization_shadow"):
         from input_data.content_identity import INPUT_CONTENT_KEY, verify_patient_input_content
 
         if INPUT_CONTENT_KEY not in source.metadata:
-            raise ValueError("biopsy paired validation requires a job planned with input content identity")
+            raise ValueError("paired validation requires a job planned with input content identity")
         verify_patient_input_content(source.metadata[INPUT_CONTENT_KEY], source.patient_inputs)
     destination = Path(output_dir).expanduser().resolve()
     if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
@@ -52,7 +60,7 @@ def run_anatomical_pair(*, job_path: Path, output_dir: Path, abs_tol: float, rel
         "patient_uid": source.patient_case.patient_uid,
         "source_job_path": str(Path(job_path).resolve()),
         "abs_tol": abs_tol, "rel_tol": rel_tol,
-        "scope": "fresh subprocess per input lane with shared patient preprocessing stage adapters",
+        "scope": "fresh subprocess per input lane with shared patient scientific stage adapters",
         "lanes": {},
     }
     checkpoints = {}
@@ -60,7 +68,7 @@ def run_anatomical_pair(*, job_path: Path, output_dir: Path, abs_tol: float, rel
     for lane in ("standalone", "legacy_input"):
         job = replace(
             source, output_root=destination / lane, job_id=source.job_id + "_" + lane,
-            metadata={**source.metadata, boundary.capture_flag: True, "validation_lane": lane},
+            metadata={**source.metadata, "capture_validation_checkpoint": True, "validation_lane": lane},
         )
         job.job_path.parent.mkdir(parents=True, exist_ok=True)
         job.job_path.write_text(json.dumps(job.as_mapping(), indent=2) + "\n", encoding="utf-8")

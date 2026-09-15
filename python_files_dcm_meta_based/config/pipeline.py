@@ -8,6 +8,7 @@ from guidance_maps.config import GuidanceMapPlanningConfig
 from guidance_maps.config import GuidanceMapRenderConfig
 
 from .bootstrap import PatientBootstrapConfig
+from .uncertainty import UncertaintyPreparationConfig
 
 if TYPE_CHECKING:
     from preprocessing.structure_processing.non_biopsy_structure_processing import (
@@ -321,6 +322,7 @@ class PreprocessingConfig:
     geometry: PreprocessingGeometryConfig
     kernel_execution: PreprocessingKernelExecutionConfig
     debug: PreprocessingDebugConfig = field(default_factory=PreprocessingDebugConfig)
+    uncertainty: UncertaintyPreparationConfig = field(default_factory=UncertaintyPreparationConfig)
 
     @property
     def interp_inter_slice_dist(self) -> float:

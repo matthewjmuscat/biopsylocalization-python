@@ -378,7 +378,7 @@ class PatientProcessRunPlan:
         object.__setattr__(self, "timeout_seconds", timeout_seconds)
         object.__setattr__(self, "execution_mode", _normalize_execution_mode(self.execution_mode))
         if self.execution_mode == "live_workers" and not standalone_pathway_supported(self.pathway_name, self.checkpoint_name):
-            raise ValueError("live_workers supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only")
+            raise ValueError("live_workers supports anatomical_qa, biopsy_preprocessing_shadow and optimization_shadow with matching checkpoints only")
         object.__setattr__(self, "requested_jobs", _normalize_requested_jobs(self.requested_jobs))
         object.__setattr__(self, "scientific_config_snapshot_path", _optional_path(self.scientific_config_snapshot_path))
         object.__setattr__(self, "run_compatibility_identity_path", _optional_path(self.run_compatibility_identity_path))
@@ -514,7 +514,7 @@ def build_patient_process_run_plan(
     resolved_execution_mode = _normalize_execution_mode(execution_mode)
     if resolved_execution_mode == "live_workers":
         if not standalone_pathway_supported(pathway_name, checkpoint_name):
-            raise ValueError("live_workers supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only")
+            raise ValueError("live_workers supports anatomical_qa, biopsy_preprocessing_shadow and optimization_shadow with matching checkpoints only")
         if resolved_snapshot_path is None or not resolved_snapshot_path.is_file():
             raise FileNotFoundError("live_workers scientific config snapshot does not exist: {}".format(resolved_snapshot_path))
         if resolved_compatibility_path is None or not resolved_compatibility_path.is_file():
@@ -730,7 +730,7 @@ def _validate_worker_compatibility_identity(
 def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runtime_builder=None) -> PatientWorkerResult:
     """Run one patient worker job.
 
-    Live execution is gated to the two explicitly supported preprocessing checkpoints.
+    Live execution is gated to explicitly supported scientific checkpoints.
     Later pathways fail closed until their standalone input/resource boundaries
     have independent parity evidence. ``runtime_builder`` is a Python-only
     validation injection; serialized jobs and the normal worker CLI cannot select
@@ -867,7 +867,7 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             job,
             start_time=start_time,
             exit_code=2,
-            warning="standalone live worker supports anatomical_qa and biopsy_preprocessing_shadow with matching checkpoints only",
+            warning="standalone live worker supports anatomical_qa, biopsy_preprocessing_shadow and optimization_shadow with matching checkpoints only",
             failed_boundary="standalone_pathway_support",
             input_preflight_metadata=input_preflight_metadata,
         )
@@ -883,6 +883,23 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             exit_code=2,
             warning="scientific config rehydration failed: {}".format(exc),
             failed_boundary="scientific_config_rehydration",
+            input_preflight_metadata=input_preflight_metadata,
+        )
+
+    try:
+        from validation.preprocessing_boundary import requested_checkpoint_captures
+
+        capture_names = requested_checkpoint_captures(job.metadata, job.checkpoint_name)
+        fixed_optimization = None
+        if job.pathway_name == "optimization_shadow":
+            from .optimization_execution import resolve_fixed_optimization_execution
+
+            fixed_optimization = resolve_fixed_optimization_execution(pipeline_config)
+    except Exception as exc:
+        return _worker_setup_failure_result(
+            job, start_time=start_time, exit_code=2,
+            warning="scientific execution contract preflight failed: {}".format(exc),
+            failed_boundary="scientific_execution_contract_preflight",
             input_preflight_metadata=input_preflight_metadata,
         )
 
@@ -932,9 +949,18 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
         from .scientific_runner import build_patient_scientific_run_config_from_pipeline
         from .scientific_runner import build_patient_scientific_runner_stages
 
+        context = standalone_runtime.config_build_context
+        if fixed_optimization is not None:
+            from dataclasses import replace
+
+            context = replace(
+                context,
+                optimizer_v2_resolved_max_test_structures_per_call=fixed_optimization[0],
+                optimizer_v2_resolved_max_candidates_per_chunk=fixed_optimization[1],
+            )
         scientific_run_config = build_patient_scientific_run_config_from_pipeline(
             pipeline_config,
-            standalone_runtime.config_build_context,
+            context,
             output_root=job.output_root,
             pathway_name=job.pathway_name,
             checkpoint_name=job.checkpoint_name,
@@ -955,22 +981,10 @@ def run_patient_worker_job(job: PatientWorkerJob, *, dry_run: bool = False, runt
             }
         )
         stages = build_patient_scientific_runner_stages(scientific_run_config)
-        capture_checkpoint = job.metadata.get("capture_anatomical_checkpoint", False)
-        if not isinstance(capture_checkpoint, bool):
-            raise TypeError("capture_anatomical_checkpoint must be a boolean")
-        if capture_checkpoint:
-            from validation.anatomical_execution import with_anatomical_checkpoint
-
-            stages = with_anatomical_checkpoint(stages, pipeline_config)
-        capture_biopsy = job.metadata.get("capture_biopsy_preprocessing_checkpoint", False)
-        if not isinstance(capture_biopsy, bool):
-            raise TypeError("capture_biopsy_preprocessing_checkpoint must be a boolean")
-        if capture_biopsy:
-            if job.pathway_name != "biopsy_preprocessing_shadow":
-                raise ValueError("biopsy checkpoint requires biopsy_preprocessing_shadow")
+        for checkpoint in capture_names:
             from validation.anatomical_execution import with_preprocessing_checkpoint
 
-            stages = with_preprocessing_checkpoint(stages, pipeline_config, checkpoint_name=job.checkpoint_name)
+            stages = with_preprocessing_checkpoint(stages, pipeline_config, checkpoint_name=checkpoint)
         if INPUT_CONTENT_KEY in job.metadata:
             stages = _with_input_content_verification(stages, job)
         patient_result = run_patient_case(

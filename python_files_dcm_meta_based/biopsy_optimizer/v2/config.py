@@ -407,4 +407,45 @@ __all__ = [
     "build_default_optimizer_v2_search_config",
     "build_default_optimizer_v2_visualization_config",
     "build_optimizer_v2_search_config_with_trial_counts",
+    "resolve_optimizer_v2_max_candidates_per_chunk",
 ]
+
+def resolve_optimizer_v2_max_candidates_per_chunk(
+    *,
+    requested_max_candidates_per_chunk,
+    resolved_max_test_structures_per_call,
+    search_config,
+    downstream_comparable_trial_count,
+    include_nominal=True,
+):
+    """Resolve candidate chunk size from explicit trial and structure budgets.
+
+    Pure legacy resolution, shared with worker preflight. Chunk size can affect
+    adaptive pruning and must be part of reproducible execution evidence.
+    """
+    if requested_max_candidates_per_chunk is not None:
+        if int(requested_max_candidates_per_chunk) <= 0:
+            raise ValueError("max_candidates_per_chunk must be positive when provided")
+        return int(requested_max_candidates_per_chunk), "manual"
+
+    if resolved_max_test_structures_per_call is None:
+        return None, "unbounded"
+
+    optimizer_max_trial_prefix = int(search_config.resolve_max_optimizer_trial_prefix())
+    resolved_max_trial_prefix = optimizer_max_trial_prefix
+    if downstream_comparable_trial_count is not None:
+        resolved_max_trial_prefix = max(
+            resolved_max_trial_prefix,
+            int(downstream_comparable_trial_count),
+        )
+
+    num_test_structures_per_candidate = resolved_max_trial_prefix + int(bool(include_nominal))
+    if num_test_structures_per_candidate <= 0:
+        raise ValueError("resolved per-candidate test-structure count must be positive")
+
+    resolved_max_candidates_per_chunk = max(
+        1,
+        int(resolved_max_test_structures_per_call)
+        // int(num_test_structures_per_candidate),
+    )
+    return resolved_max_candidates_per_chunk, "dynamic_from_calibrated_structure_budget"

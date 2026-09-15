@@ -84,10 +84,19 @@ def with_preprocessing_checkpoint(stages: tuple, pipeline_config: Any, *, checkp
     from validation.preprocessing_boundary import preprocessing_boundary
 
     boundary = preprocessing_boundary(checkpoint_name)
+    transform_state = {}
 
     wrapped = []
     found = False
     for stage in stages:
+        if checkpoint_name == "optimization_shadow" and stage.stage_name == "transform_generation":
+            def retain_transform_state(runtime_state, config, *, runner=stage.runner):
+                result = runner(runtime_state, config)
+                if result.succeeded:
+                    transform_state[runtime_state.patient_uid] = dict(result.metadata)
+                return result
+            wrapped.append(PatientStage(stage.stage_name, retain_transform_state))
+            continue
         if stage.stage_name != boundary.stage_name:
             wrapped.append(stage)
             continue
@@ -98,11 +107,20 @@ def with_preprocessing_checkpoint(stages: tuple, pipeline_config: Any, *, checkp
             result = runner(runtime_state, config)
             if not result.succeeded:
                 return result
+            execution = None
+            if checkpoint_name == "optimization_shadow":
+                if tuple(result.metadata.get("steps", ())) != ("optimizer_v1", "optimizer_v2"):
+                    raise ValueError("optimization checkpoint requires both optimizer stages")
+                execution = {
+                    "transform_generation": transform_state.pop(runtime_state.patient_uid),
+                    "optimization": dict(result.metadata),
+                }
             path = write_anatomical_checkpoint(
                 runtime_state=runtime_state, pipeline_config=pipeline_config,
                 output_dir=config.patient_output_dir(runtime_state.patient_case) / "validation" / boundary.directory,
                 metadata={**runtime_state.metadata, "stage_metadata": dict(result.metadata)},
                 checkpoint_name=checkpoint_name,
+                optimization_state=execution,
             )
             return replace(result, metadata={**result.metadata, boundary.directory + "_checkpoint_path": str(path)})
 

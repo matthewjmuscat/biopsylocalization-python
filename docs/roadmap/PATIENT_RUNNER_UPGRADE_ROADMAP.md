@@ -33,8 +33,13 @@ not permanent reproduction of the main sequence.
   migration parity, not independent scientific truth. The
   [biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md)
   retains the accepted geometry, reviewed characterization and repeatable recipe.
-- **Next scientific slices:** transform generation/optimizer producer inputs
-  and outputs, then realized biopsy geometry and classification in explicit
+- **Optimization implemented / representative gate pending:** `optimization_shadow`
+  now exposes existing transform generation and both optimizers, with generated
+  patient uncertainty, explicit fixed capacity and bounded exact evidence. Use
+  the [optimization runbook](../runtime/OPTIMIZATION_RUNBOOK.md) for the fresh
+  user-operated F2 pair. This is not yet a real-patient qualification.
+- **Next scientific slices:** after that gate passes, consume the optimizer
+  producer in `post_optimizer_biopsy_realization_shadow`, then classification in explicit
   dependency-valid slices. Do not treat the current coarse DAG as a permanent
   requirement that every guidance/classification workflow run optimization or MC.
 - **Future orientation and schema migration:** make acquisition/biopsy orientation

@@ -21,7 +21,7 @@ class PatientScientificPathwayName(str, Enum):
     FULL_CURRENT_PIPELINE_SHADOW = "full_current_pipeline_shadow"
 
 
-STANDALONE_LIVE_PATHWAYS = ("anatomical_qa", "biopsy_preprocessing_shadow")
+STANDALONE_LIVE_PATHWAYS = ("anatomical_qa", "biopsy_preprocessing_shadow", "optimization_shadow")
 
 
 def standalone_pathway_supported(pathway_name: str, checkpoint_name: str) -> bool:

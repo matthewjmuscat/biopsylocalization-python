@@ -91,10 +91,10 @@ Current migration status:
 - Parent help, planning, TOML parsing, and dry-run workers no longer import
   optimizer/MC execution modules or initialize CUDA merely through the patient
   scientific config builder.
-- Non-dry-run worker execution supports `anatomical_qa` and
-   `biopsy_preprocessing_shadow`, each with the same-named checkpoint. The
+- Non-dry-run worker execution supports `anatomical_qa`,
+   `biopsy_preprocessing_shadow` and `optimization_shadow`, each with the same-named checkpoint. The
    worker rehydrates verified scientific config, builds one patient-local
-   runtime, executes the existing grid/anatomical and optionally biopsy adapters, writes the
+   runtime, executes the selected grid/anatomical/biopsy/transform/optimizer adapters, writes the
    patient manifest, and exits. Later pathways still fail closed.
 - The legacy-main live patient-scientific runner default is disabled. Legacy-backed
   scientific execution and scientific-shadow validation now fail closed when a
@@ -248,12 +248,19 @@ Biopsy-preprocessing execution boundary:
   byte ledgers, successful-attempt matching, strict provenance and exact 0/0
   comparison. No second runner or validation framework was introduced.
 - The shared reference-worker selector accepts matching pathway/checkpoint pairs
-  for `anatomical_qa` and `biopsy_preprocessing_shadow`. Each reference attempt
+  for `anatomical_qa`, `biopsy_preprocessing_shadow` and `optimization_shadow`. Each reference attempt
   independently constructs singleton legacy input state in a fresh worker before
   invoking the same scientific stages. This comparison establishes input and
   execution migration parity; sharing algorithms does not independently validate
   their scientific definitions.
-- Current evidence and user-operated gate instructions belong in the
+- `optimization_shadow` additionally generates patient-local uncertainty from
+  typed policy, runs seeded transform generation and both optimizers, and stops
+  before realization. Hardware capacity can affect adaptive pruning; workers
+  require an explicit fixed structure budget and resolve candidate chunks before
+  patient loading. `optimization_checkpoint_v1` retains scientific products and
+  executed seeds/counts/capacities. The representative real-patient gate remains
+  pending; see the [optimization runbook](../runtime/OPTIMIZATION_RUNBOOK.md).
+- Current biopsy evidence and user-operated gate instructions belong in the
   [biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md); migration status and
   future work belong in the
   [roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities).

@@ -50,10 +50,12 @@ length, this patient's DIL mean, or the existing full-length fallback. Removed
 Patient dictionaries remain transitional compatibility storage; checkpoints
 retain bounded products rather than serializing runtime dictionaries.
 
-Uncertainty spreadsheet attachment has no standalone producer/input contract
-and remains absent. Realized targeting is still deferred to simulated-biopsy
-finalization. Optimization, transforms, realization, classification, MC and
-guidance remain fail-closed as standalone live pathways. Planning samples here
+This biopsy-only boundary does not attach uncertainty. The later
+`optimization_shadow` pathway now prepares generated patient uncertainty and
+runs transforms plus both optimizers; its representative gate is pending. See
+the [optimization runbook](OPTIMIZATION_RUNBOOK.md). Edited uncertainty
+spreadsheets remain unsupported standalone inputs. Realization, classification,
+MC and guidance remain fail-closed as standalone live pathways. Planning samples here
 are an existing preprocessing product, not later tissue classification.
 
 ## Reference-worker boundary
@@ -172,6 +174,14 @@ is covered by exact config/readback equivalence and focused tests. When repeatin
 choose a new `WORK` destination and keep source and inputs stable after preparing
 provenance. Prepare new environment-v2 execution provenance from the retained
 scientific snapshot; preserve historical reports unchanged.
+
+**Config evolution:** the optimization implementation adds typed uncertainty
+policy to scientific snapshots. Historical snapshots without that subtree remain
+readable evidence but cannot be rehydrated with their old SHA into the expanded
+tree. For a new execution, generate fresh typed config as described in the
+[optimization recipe](OPTIMIZATION_RUNBOOK.md#user-operated-representative-gate),
+then use the biopsy pathway below. Pinning optimizer capacity is unnecessary for
+a biopsy-only run. Do not rewrite historical snapshots or PASS records.
 
 From the repository root:
 

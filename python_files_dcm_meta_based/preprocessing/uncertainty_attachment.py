@@ -1,7 +1,5 @@
 from datetime import datetime
 import sys
-import tkinter as tk
-from tkinter import filedialog as fd
 
 import numpy as np
 import pandas
@@ -166,6 +164,9 @@ def prepare_and_attach_uncertainty_data(master_structure_reference_dict,
     master_cohort_patient_data_and_dataframes["Dataframes"]["Uncertainties dataframe (unedited)"] = uncertainties_dataframe
 
     if modify_generated_uncertainty_template == True:
+        import tkinter as tk
+        from tkinter import filedialog as fd
+
         live_display.stop()
         live_display.console.print("[bold red]User input required:")
         uncertainty_file_ready = False

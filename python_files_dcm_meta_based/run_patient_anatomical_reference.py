@@ -1,4 +1,4 @@
-"""Reference worker for anatomical and biopsy-preprocessing migration validation.
+"""Reference worker for anatomical, biopsy and optimization migration validation.
 
 Retains the historical CLI name for existing callers. Each invocation builds
 independent legacy singleton inputs; the ordinary worker owns preflight, current

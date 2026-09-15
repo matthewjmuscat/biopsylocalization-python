@@ -35,6 +35,7 @@ from .scientific_config import PatientSimulatedBiopsyPreparationStageConfig
 from .scientific_config import PatientStandardNonBiopsyStructureProcessingStageConfig
 from .scientific_config import PatientStructureSelectionStageConfig
 from .scientific_config import PatientUncertaintyAttachmentStageConfig
+from .scientific_config import PatientUncertaintyPreparationStageConfig
 from .contracts import PatientStageName
 from .scientific_shadow import PatientScientificShadowConfig
 
@@ -169,7 +170,11 @@ def build_patient_runner_scientific_config(
             else None
         ),
         preprocessing=(
-            _build_preprocessing_config(pipeline_config, context)
+            _build_preprocessing_config(
+                pipeline_config, context,
+                generate_uncertainty=(requested_stage_names is not None and
+                                      PatientStageName.TRANSFORM_GENERATION in requested_stage_names),
+            )
             if requested(PatientStageName.PREPROCESSING)
             else None
         ),
@@ -294,12 +299,15 @@ def _build_anatomical_preprocessing_config(
 def _build_preprocessing_config(
     pipeline_config: Any,
     context: PatientRunnerScientificConfigBuildContext,
+    *, generate_uncertainty: bool = False,
 ) -> PatientPreprocessingScientificConfig:
     refs = pipeline_config.legacy_refs
     registry = pipeline_config.structure_registry
     biopsy = pipeline_config.biopsy
     mc_prep = pipeline_config.mc.prep
     uncertainty_attachment = None
+    if generate_uncertainty and ((context.read_uncertainties_dataframe is None) != (context.uncertainty_data_cls is None)):
+        raise ValueError("resolved uncertainty attachment requires both dataframe and uncertainty_data_cls")
     if context.read_uncertainties_dataframe is not None and context.uncertainty_data_cls is not None:
         uncertainty_attachment = PatientUncertaintyAttachmentStageConfig(
             read_uncertainties_dataframe=context.read_uncertainties_dataframe,
@@ -333,6 +341,13 @@ def _build_preprocessing_config(
             dil_ref=refs.dil_ref,
         ),
         uncertainty_attachment=uncertainty_attachment,
+        uncertainty_preparation=(
+            PatientUncertaintyPreparationStageConfig(
+                policy=pipeline_config.preprocessing.uncertainty,
+                structs_referenced_list=registry.structs_referenced_list,
+                structs_referenced_dict=registry.structs_referenced_dict,
+            ) if generate_uncertainty and uncertainty_attachment is None else None
+        ),
     )
 
 

@@ -657,9 +657,9 @@ def main(*, scientific_config_export_path=None, pipeline_config=None):
     # Remaining loose legacy settings: separate future config/presentation slices.
     data_folder_name = 'Data'
     input_data_folder_name = "Input data"
-    use_added_in_quad_errors_as = 'two sigma' # can be 'sigma' or 'two sigma', 'two sigma' will provide tighter uncertainty clouds
-    biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
-    non_biopsy_variation_uncertainty_setting = "Default only" # At the moment, only "Default only" is supported
+    use_added_in_quad_errors_as = pipeline_config.preprocessing.uncertainty.use_added_in_quad_errors_as
+    biopsy_variation_uncertainty_setting = pipeline_config.preprocessing.uncertainty.biopsy_variation_uncertainty_setting
+    non_biopsy_variation_uncertainty_setting = pipeline_config.preprocessing.uncertainty.non_biopsy_variation_uncertainty_setting
     uncertainty_folder_name = 'Uncertainty data'
     uncertainty_file_name = "uncertainties_file_auto_generated"
     uncertainty_file_extension = ".csv"

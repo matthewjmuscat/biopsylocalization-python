@@ -440,6 +440,20 @@ def run_patient_preprocessing_scientific_stage(
         metadata["steps"].append("simulated_biopsy_planning")
         metadata["simulated_biopsy_planning_count"] = int(simulated_biopsy_count)
 
+    if stage_config.uncertainty_preparation is not None:
+        from preprocessing.patient_uncertainty import prepare_patient_uncertainty_data
+
+        uncertainty = stage_config.uncertainty_preparation
+        resolved = prepare_patient_uncertainty_data(
+            patient_uid=runtime_state.patient_uid, pydicom_item=pydicom_item,
+            master_structure_info_dict=runtime_state.master_structure_info_dict,
+            structs_referenced_list=uncertainty.structs_referenced_list,
+            structs_referenced_dict=uncertainty.structs_referenced_dict,
+            policy=uncertainty.policy,
+        )
+        metadata["steps"].append("uncertainty_preparation")
+        metadata["uncertainty_attached_count"] = len(resolved)
+
     if stage_config.uncertainty_attachment is not None:
         from preprocessing.uncertainty_attachment import attach_patient_uncertainty_data_from_dataframe
 

@@ -28,6 +28,8 @@ Current durable docs:
 - `runtime/BIOPSY_PREPROCESSING_RUNBOOK.md` - accepted biopsy geometry, reviewed
   characterization, exact paired-validation recipe and optional synthetic dose
   fixtures.
+- `runtime/OPTIMIZATION_RUNBOOK.md` - implemented optimizer boundary, required
+  uncertainty/capacity contracts and pending representative exact paired gate.
 
 - `architecture/PATIENT_MODULE_TREE_GUIDE.md` - canonical ownership and
   placement guide for patient-level scientific modules and the

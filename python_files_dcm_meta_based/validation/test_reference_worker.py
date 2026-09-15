@@ -16,8 +16,8 @@ from validation.anatomical_execution import build_legacy_input_anatomical_runtim
 
 
 class ReferenceWorkerTests(unittest.TestCase):
-    def test_live_entrypoint_dispatches_both_boundaries_to_independent_builder(self):
-        for boundary in ("anatomical_qa", "biopsy_preprocessing_shadow"):
+    def test_live_entrypoint_dispatches_supported_boundaries_to_independent_builder(self):
+        for boundary in ("anatomical_qa", "biopsy_preprocessing_shadow", "optimization_shadow"):
             with self.subTest(boundary=boundary):
                 job = SimpleNamespace(pathway_name=boundary, checkpoint_name=boundary)
                 result = SimpleNamespace(exit_code=0)
@@ -30,6 +30,8 @@ class ReferenceWorkerTests(unittest.TestCase):
 
     def test_unsupported_pathway_and_mismatched_checkpoint_fail_before_dispatch(self):
         for pathway, checkpoint in (("full", "full"), ("unknown", "unknown"),
+                                    ("optimization_shadow", "biopsy_preprocessing_shadow"),
+                                    ("post_optimizer_biopsy_realization_shadow", "post_optimizer_biopsy_realization_shadow"),
                                     ("biopsy_preprocessing_shadow", "anatomical_qa"),
                                     ("anatomical_qa", "biopsy_preprocessing_shadow")):
             with self.subTest(pathway=pathway, checkpoint=checkpoint):
@@ -40,12 +42,12 @@ class ReferenceWorkerTests(unittest.TestCase):
                         reference.main(["synthetic-job.json"])
                     run.assert_not_called()
 
-    def test_actual_reference_subprocess_accepts_anatomical_and_biopsy_jobs(self):
+    def test_actual_reference_subprocess_accepts_supported_jobs(self):
         script = Path(reference.__file__).resolve()
         with TemporaryDirectory() as directory:
             root = Path(directory)
             manifest = _write_case_manifest(root, ("SYNTHETIC",), create_core_files=False)
-            for boundary in ("anatomical_qa", "biopsy_preprocessing_shadow"):
+            for boundary in ("anatomical_qa", "biopsy_preprocessing_shadow", "optimization_shadow"):
                 with self.subTest(boundary=boundary):
                     plan = build_patient_process_run_plan(input_case_manifest_path=manifest,
                         output_root=root / boundary, pathway_name=boundary, checkpoint_name=boundary)

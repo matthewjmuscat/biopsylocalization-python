@@ -27,6 +27,12 @@ migration parity, not independent scientific truth. The
 retains the accepted geometry, reviewed characterization, paired-validation
 recipe and optional synthetic dose fixtures.
 
+The third boundary, `optimization_shadow`, is implemented with representative
+qualification pending. The [optimization runbook](../../docs/runtime/OPTIMIZATION_RUNBOOK.md)
+defines uncertainty preparation, fixed capacity, exact transform/v1/v2/transport
+evidence and the user-operated pair. Use `validate_patient_preprocessing.py`
+with `--checkpoint-name optimization_shadow`; its existing biopsy default remains.
+
 ## Quick Start
 
 From the repository root:

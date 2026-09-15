@@ -1,4 +1,4 @@
-"""Names for the two supported migration checkpoints; no scientific imports.
+"""Names for the supported migration checkpoints; no scientific imports.
 
 This is a bounded selector shared by workers and validation commands, not a
 pathway registration framework. Scientific dependencies remain in patient_runner.
@@ -34,4 +34,27 @@ def preprocessing_boundary(name: str) -> PreprocessingBoundary:
     if name == "biopsy_preprocessing_shadow":
         return PreprocessingBoundary(name, "preprocessing", "biopsy_preprocessing",
                                      "biopsy_preprocessing_checkpoint_v1", "capture_biopsy_preprocessing_checkpoint")
+    if name == "optimization_shadow":
+        return PreprocessingBoundary(name, "optimization", "optimization",
+                                     "optimization_checkpoint_v1", "capture_validation_checkpoint")
     raise ValueError("unsupported preprocessing checkpoint: " + str(name))
+
+
+def requested_checkpoint_captures(metadata, checkpoint_name: str) -> tuple[str, ...]:
+    """Resolve the common capture switch and historical flags before science."""
+    result = []
+    for flag, name in (
+        ("capture_anatomical_checkpoint", "anatomical_qa"),
+        ("capture_biopsy_preprocessing_checkpoint", "biopsy_preprocessing_shadow"),
+        ("capture_validation_checkpoint", checkpoint_name),
+    ):
+        enabled = metadata.get(flag, False)
+        if type(enabled) is not bool:
+            raise TypeError(flag + " must be a boolean")
+        if enabled:
+            preprocessing_boundary(name)
+            if name != "anatomical_qa" and name != checkpoint_name:
+                raise ValueError("checkpoint capture requires matching pathway/checkpoint: " + name)
+            if name not in result:
+                result.append(name)
+    return tuple(result)
