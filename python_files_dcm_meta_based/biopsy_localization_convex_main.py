@@ -1,4 +1,4 @@
-import os 
+import os
 import pydicom # imported for reading dicom files
 import pathlib # imported for navigating file system
 import glob
@@ -12,7 +12,7 @@ import biopsy_creator
 import sys # imported for loading bar
 from decimal import Decimal # for use in the loading bar
 import loading_tools # imported for more sophisticated loading bar
-import time # allows function to tell programme to wait, this was for testing the loading bar 
+import time # allows function to tell programme to wait, this was for testing the loading bar
 import ques_funcs
 import timeit
 import random
@@ -80,7 +80,7 @@ from itertools import combinations
 import biopsy_transporter
 import matplotlib.pyplot as plt
 from collections import defaultdict
-import MC_prepper_funcs 
+import MC_prepper_funcs
 import MC_simulator_MR
 import custom_raw_kernel_cuda_cuspatial_one_to_one_p_in_p
 import polygon_dilation_helpers_numpy
@@ -132,54 +132,16 @@ from preprocessing.structure_processing.non_biopsy_structure_stage_validation im
 from preprocessing.structure_processing.prostate_only_mr_adc import prostate_only_mr_adc_processer
 from sampling import biopsy_point_sampler
 from biopsy_optimizer.v1.biopsy_optimizer_module_v1 import biopsy_optimizer_module_v1
-from biopsy_optimizer.v2.biopsy_optimizer_module_v2 import build_optimizer_v2_adaptive_block_search_config
 from biopsy_optimizer.v2.live_integration import (
     annotate_target_dil_optimizer_v2_outputs_with_biopsy_sampling_audit,
     annotate_target_dil_optimizer_v2_outputs_with_downstream_mc_scores,
     run_target_dil_optimizer_v2_for_live_simulated_family,
 )
-from config import ArtifactConfig
-from config import BiopsyGeometryConfig
-from config import BiopsyRuntimeConfig
-from config import PatientBootstrapConfig
-from config import GuidanceMapConfig
-from config import GridPreprocessingConfig
-from config import LegacyReferenceConfig
-from config import MCCountsConfig
-from config import MCDebugConfig
-from config import MCOutputDumpConfig
-from config import MCPrepConfig
-from config import MCSimulationCoreConfig
-from config import MCTissueClassificationConfig
-from config import MCVisualizationConfig
-from config import MonteCarloConfig
-from config import OptimizerV1RuntimeConfig
-from config import OptimizerV2CapacityConfig
-from config import OptimizerV2DiagnosticsConfig
-from config import OptimizerV2PlotlyExportConfig
-from config import OptimizerV2RenderConfig
-from config import OptimizerV2RuntimeConfig
-from config import OptimizerRuntimeConfig
-from config import OutputValidationConfig
-from config import PatientScientificRunnerExecutionConfig
-from config import PatientRunnerValidationHookConfig
-from config import PipelineConfig
-from config import PreprocessingConfig
-from config import PreprocessingDebugConfig
-from config import PreprocessingGeometryConfig
-from config import PreprocessingInterpolationConfig
-from config import PreprocessingKernelExecutionConfig
-from config import RandomSeedConfig
-from config import RuntimeReplayConfig
-from config import RuntimeUIConfig
-from config import SamplingClassificationConfig
-from config import SimulatedBiopsyConfig
-from config import SimulatedBiopsyBootstrapPolicy
-from config import StructureContourPolicy
-from config import StructureDataRemovalPolicy
-from config import StructureRegistryConfig
-from config import ValidationSidecarConfig
-from guidance_maps.config import GuidanceMapPlanningConfig
+from config.production import (
+    CENTROID_DIL_SIMULATED_TYPE,
+    OPTIMAL_DIL_SIMULATED_TYPE,
+    build_production_pipeline_config,
+)
 from guidance_maps.planning import precompute_guidance_map_firing_depth_recommendations_for_run
 from input_data import write_input_manifest_files
 from output_artifacts import build_in_memory_stitch_validation
@@ -202,7 +164,6 @@ from patient_runner import summarize_patient_runner_main_validation
 from patient_runner import summarize_patient_scientific_run_config
 from patient_runner import write_patient_scientific_run_plan_summary
 from patient_runner.state_isolation import copy_isolated_legacy_runtime_state_from_snapshot
-from guidance_maps.config import GuidanceMapRenderConfig
 from startup.guidance_map_workflow import render_guidance_maps_for_run
 from startup.pickle_bundle_run_loader import load_selected_pickle_bundle_run
 from startup.runtime_logging import RuntimeLogger
@@ -248,18 +209,18 @@ def configure_transform_generation_counts(master_structure_info_dict,
     return max_num_mc_simulations, max_generated_transform_samples
 
 
-def main(*, scientific_config_export_path=None):
-    
+def main(*, scientific_config_export_path=None, pipeline_config=None):
+
     """
-    A programme designed to receive dicom data consisting of prostate 
-    ultrasound containing contouring and dosimetry information. The programme is then 
-    designed to analyse the contour information to localize the biopsy 
-    contours relative to the DIL and prostate contours. This version 
+    A programme designed to receive dicom data consisting of prostate
+    ultrasound containing contouring and dosimetry information. The programme is then
+    designed to analyse the contour information to localize the biopsy
+    contours relative to the DIL and prostate contours. This version
     of the programme does not rely on the structure of the data folder,
     all data may simply be dumped into the data folder, in whatever structure
     the analyzer would like. The programme relies solely on the dicom
-    meta-data to identify patients, treatments and dicom type. At present, 
-    it only requires that there exist a folder called Data, located two levels 
+    meta-data to identify patients, treatments and dicom type. At present,
+    it only requires that there exist a folder called Data, located two levels
     above this file.
     """
 
@@ -272,1224 +233,9 @@ def main(*, scientific_config_export_path=None):
     plt.ioff()
 
 
-    ### Non-user changeable keys 
-    all_ref_key = "All ref"
-    bx_ref = "Bx ref"
-    by_patient_key = "By patient"
-    global_key = "Global"
-    global_num_cases_key = "Num cases"
-    oar_ref = "OAR ref"
-    dil_ref = "DIL ref"
-    rectum_ref_key = "Rectum ref"
-    urethra_ref_key = "Urethra ref"
-    ###
-
-
-    # NOTE: DONT THINK WE WANT TO INCLUDE PATIENT 198 (F1), DOES NOT HAVE ANY BIOPSIES!
-
-
-    # Data removals dictionary (Specify patient and biopsy ids to remove from the dataset)
-    # specify the patient IDs and the list of biopsy names to remove from the dataset
-    data_removals_dict_bx = {"189 (F2)": ["Bx_Tr LM1 blood"],
-                            "192 (F2)": ["Bx_trk LM blood"],
-                            "200 (F1)": ["Bx_LTapex_needle"],#["Bx_LTapex_air"], # the air in this case is actually better, the needle structure is way too long in this one
-                            "201 (F2)": ["Bx_LTpost_air"],
-                            "203 (F1)": ["Bx_LTapex_air"],
-                            }
-    
-    data_removals_dict_dil = {"194 (F1)": ["DIL 2"],
-                            "194 (F2)": ["DIL 2"],
-                            "195 (F2)": ["DIL 1 MIN", "DIL 2 MIN"],
-                            "196 (F1)": ["DIL 1 MIN"],
-                            "196 (F2)": ["DIL 1 MIN"],
-                            "199 (F1)": ["DIL 1 MIN", "DIL 2 MIN"],
-                            "199 (F2)": ["DIL 1 MIN", "DIL 2 MIN"],
-                            }
-    
-    data_removals_dict_prostate = {"194 (F1)": ["Prostate pre"],
-                            "194 (F2)": ["Prostate_pre"],
-                            "195 (F1)": ["Prostate biop"],
-                            "195 (F2)": ["Prostate pre"],
-                            "196 (F1)": ["Prostate_pre"],
-                            "196 (F2)": ["Prostate_pre"],
-                            "199 (F1)": ["Prostate_pre"],
-                            "199 (F2)": ["Prostate_pre"],
-                            "198 (F2)": ["Prostate_pre", "Prostate_biop"],
-                            "200 (F1)": ["Prostate_pre"],
-                            "200 (F2)": ["Prostate_pre"],
-                            "201 (F1)": ["Prostate_pre"],
-                            "201 (F2)": ["Prostate pre"],
-                            "203 (F1)": ["Prostate_pre"],
-                            "203 (F2)": ["Prostate-pre"]
-                            }
-    
-    data_removals_dict_urethra = {"194 (F1)": ["Opti Urethra"],
-                            "194 (F2)": ["Opti Urethra"],
-                            "195 (F1)": ["Opti Urethra", "Urethra_pre"],
-                            "195 (F2)": ["Opti Urethra", "Urethra_pre"],
-                            "196 (F1)": ["Opti Urethra"],
-                            "196 (F2)": ["Opti Urethra"],
-                            "199 (F1)": ["Opti Urethra"],
-                            "199 (F2)": ["Opti Urethra"],
-                            "198 (F2)": ["Opti Urethra"],
-                            "200 (F1)": ["Opti Urethra"],
-                            "200 (F2)": ["Opti Urethra"],
-                            "201 (F1)": ["Opti Urethra"],
-                            "201 (F2)": ["Opti Urethra"],
-                            "203 (F1)": ["Opti Urethra"],
-                            "203 (F2)": ["Opti Urethra"]
-                            }
-    
-    data_removals_dict_rectum = {}
-
-
-    # The following could be user input, for now they are defined here, and used throughout 
-    # the programme for generality
-    data_folder_name = 'Data'
-    input_data_folder_name = "Input data"
-    #oaroi_contour_names = ['Prostate','Urethra','Rectum','Normal', 'CTV','random'] 
-    """
-    Consider prostate only for OARs!
-
-    -- Also the first structure in the below list is the structure specified to plot probability of missing this structure!
-    """
-    ### Note that in these contour name lists, the first one is seen as the priority string during the selection process 
-    # (see misc_tools.specific_structure_selector_dataframe_version for more details)
-    # with the exception of biopsies and dils as they are excluded from structs_referenced_list_generalized_unique_structs
-    prostate_contour_name = 'Prostate'
-    oaroi_contour_names = [prostate_contour_name]
-    structure_miss_probability_roi = oaroi_contour_names[0]
-    biopsy_contour_names = ['Bx']
-    dil_contour_names = ['DIL']
-    rectum_contour_names = ['Rectum']
-    urethra_contour_names = ['Urethra']
-    ### IMPORTANT! I THINK FROM THIS POINT FORWARD I AM GOING TO HAVE EACH STRUCTURE HAVE THEIR OWN REFERENCE! IN FUTURE VERSIONS
-    ### I SHOULD MIGRATE OAR_REF TO PROSTATE_REF! SEE THE LINE BELOW THAT DEFINES structs_referenced_list_generalized !!!    
-    
-    ## Allowable prefixes for recognizing different fractions from the patient id field
-    fraction_prefixes = ['f', 'fraction', '']
-
-
-
-
-
-
-
-
-         
-
-    ### DEFAULT MUs and SIGMAs ###
-
-    # Prostate
-    # FROM LITERATURE OF INTEROBSERVER VARIABILITY IN PROSTATE
-    # "Comparison of prostate volume, shape, and contouring variability determined from preimplant magnetic resonance and transrectal ultrasound images" - Liu et al.
-    # Took half of the length width height values from FIG 3.
-    # Translations
-    oar_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    oar_default_sigma_Y_list = [2.5] # default sigma in mm
-    oar_default_sigma_Z_list = [2.5] # default sigma in mm
-    oar_default_mu_X_list = [0]
-    oar_default_mu_Y_list = [0]
-    oar_default_mu_Z_list = [0]
-    # dilations
-    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    oar_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    oar_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
-    oar_dilations_default_mu_XY_list = [0]
-    oar_dilations_default_mu_Z_list = [0]
-    # rotations
-    oar_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
-    oar_rotations_default_sigma_Y_list = [0]
-    oar_rotations_default_sigma_Z_list = [0]
-    oar_rotations_default_mu_X_list = [0]
-    oar_rotations_default_mu_Y_list = [0]
-    oar_rotations_default_mu_Z_list = [0]
-
-    # Biopsy
-    # THIS SHOULD COME FROM MEAN MDA IN US TO US, THE OTHER COMPONENT COMES FROM MEAN VARIATION IN BIOPSY CENTROIDS AND IS CALCULATED IN PREPROCESSING
-    # Translations
-    biopsy_default_sigma_X_list = [2.5] # default sigma in mm  2.5 for MDA registration uncertainty, also consistent with literature
-    biopsy_default_sigma_Y_list = [2.5] # default sigma in mm
-    biopsy_default_sigma_Z_list = [2.5] # default sigma in mm
-    biopsy_default_mu_X_list = [0]
-    biopsy_default_mu_Y_list = [0]
-    biopsy_default_mu_Z_list = [0]
-    # dilations (UNIFORM) # note that these are distances (d) so 0 will impose a shift of 0 from its original position
-    biopsy_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid line in the perpendicular radial direction
-    biopsy_dilations_default_sigma_Z_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat. these are distances in mm that the points will shift towards and away from the biopsy centroid line in the parallel axial direction
-    biopsy_dilations_default_mu_XY_list = [0]
-    biopsy_dilations_default_mu_Z_list = [0]
-    # rotations
-    biopsy_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
-    biopsy_rotations_default_sigma_Y_list = [0]
-    biopsy_rotations_default_sigma_Z_list = [0]
-    biopsy_rotations_default_mu_X_list = [0]
-    biopsy_rotations_default_mu_Y_list = [0]
-    biopsy_rotations_default_mu_Z_list = [0]
-
-
-    # DILs
-    # CALCULATE FROM MEAN MDA BETWEEN MRI/US
-    # Translations
-    dil_default_sigma_X_list = [2.5,2.5,2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    dil_default_sigma_Y_list = [2.5,2.5,2.5] # default sigma in mm
-    dil_default_sigma_Z_list = [2.5,2.5,2.5] # default sigma in mm
-    dil_default_mu_X_list = [0]
-    dil_default_mu_Y_list = [0]
-    dil_default_mu_Z_list = [0]
-    # dilations
-    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    dil_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    dil_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
-    dil_dilations_default_mu_XY_list = [0]
-    dil_dilations_default_mu_Z_list = [0]
-    # rotations
-    dil_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
-    dil_rotations_default_sigma_Y_list = [0]
-    dil_rotations_default_sigma_Z_list = [0]
-    dil_rotations_default_mu_X_list = [0]
-    dil_rotations_default_mu_Y_list = [0]
-    dil_rotations_default_mu_Z_list = [0]
-
-
-    # Urethras
-    # Translations
-    urethra_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    urethra_default_sigma_Y_list = [2.5] # default sigma in mm
-    urethra_default_sigma_Z_list = [2.5] # default sigma in mm
-    urethra_default_mu_X_list = [0]
-    urethra_default_mu_Y_list = [0]
-    urethra_default_mu_Z_list = [0]
-    # dilations
-    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    urethra_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    urethra_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
-    urethra_dilations_default_mu_XY_list = [0]
-    urethra_dilations_default_mu_Z_list = [0]
-    # rotations
-    urethra_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
-    urethra_rotations_default_sigma_Y_list = [0]
-    urethra_rotations_default_sigma_Z_list = [0]
-    urethra_rotations_default_mu_X_list = [0]
-    urethra_rotations_default_mu_Y_list = [0]
-    urethra_rotations_default_mu_Z_list = [0]
-
-
-
-    # Rectums
-    # Translations
-    rectum_default_sigma_X_list = [2.5] # default sigma in mm # 2.5 for contouring variability and 2.5 for MDA registration uncertainty, also consistent with literature
-    rectum_default_sigma_Y_list = [2.5] # default sigma in mm
-    rectum_default_sigma_Z_list = [2.5] # default sigma in mm
-    rectum_default_mu_X_list = [0]
-    rectum_default_mu_Y_list = [0]
-    rectum_default_mu_Z_list = [0]
-    # dilations
-    # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat, and p' = p + d.rhat, where rhat = p-c, where c is the non-bx structure centroid.... are mathematically equivalent, and therefore can be applied to the bx structures instead of the non bx structures!
-    rectum_dilations_default_sigma_XY_list = [0] # these are used to compute the uniform expansion distances (d). in other words b' = b-d.rhat
-    rectum_dilations_default_sigma_Z_list = [0] # these are distances in mm that the points will shift towards and away from the oar centroid
-    rectum_dilations_default_mu_XY_list = [0]
-    rectum_dilations_default_mu_Z_list = [0]
-    # rotations
-    rectum_rotations_default_sigma_X_list = [0] # pi/36 = 5 deg
-    rectum_rotations_default_sigma_Y_list = [0]
-    rectum_rotations_default_sigma_Z_list = [0]
-    rectum_rotations_default_mu_X_list = [0]
-    rectum_rotations_default_mu_Y_list = [0]
-    rectum_rotations_default_mu_Z_list = [0]
-
-    
-    use_added_in_quad_errors_as = 'two sigma' # can be 'sigma' or 'two sigma', 'two sigma' will provide tighter uncertainty clouds 
-    biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
-    # "Per biopsy max" = will automatically alter uncertainty file to include the max variation of the biopsy contours for each biopsy seperately in the sigma value for the biopsy uncertainty
-    # "Per biopsy mean" = will automatically alter uncertainty file to include the mean variation of the biopsy contours for each biopsy seperately in the sigma value for the biopsy uncertainty
-    # "Default only" = will only use the values provided by the biospy_default_list, presumably this would account only for registration uncertainty
-    non_biopsy_variation_uncertainty_setting = "Default only" # At the moment, only "Default only" is supported
-    
-    
-    uncertainty_folder_name = 'Uncertainty data'
-    uncertainty_file_name = "uncertainties_file_auto_generated"
-    uncertainty_file_extension = ".csv"
-
-
-
-
-
-
-
-
-
-
-
-
-
-    spinner_type = 'moon' # other decent ones are 'point' and 'line' or 'line2'
-    rich_live_display_bool = True # [FIRST_PASS_CONFIG] If False, disables the Rich live screen and falls back to plain console status/prompt output.
-    output_folder_name = 'Output data'
-    preprocessed_data_folder_name = 'Preprocessed data'
-    preprocessed_master_structure_ref_dict_for_export_name = 'master_structure_reference_dict'
-    preprocessed_master_structure_info_dict_for_export_name = 'master_structure_info_dict'
-    lower_bound_dose_value = None # can also set to None and will try to assign by pydicom_item[plan_ref]["Prescription doses dict"]["TARGET"]
-    #lower_bound_dose_percent = 10
-    lower_bound_dose_gradient_value = 0
-    lower_bound_mr_adc_value = 500
-    upper_bound_mr_adc_value = 900
-    color_flattening_deg = 3
-    color_flattening_deg_MR = 1 # 1 means it will not flatten
-    interp_inter_slice_dist = 0.5
-    interp_intra_slice_dist = 0.5 # user defined length scale for intraslice interpolation min distance between points. It is used in the interpolation_information_obj class
-    interp_dist_caps = 0.25
-    biopsy_radius = 0.5
-    simulated_biopsy_planning_radius_mm = biopsy_radius # Keep planned sim-biopsy geometry aligned with finalized biopsy geometry and optimizer-v2 sampling.
-    biopsy_needle_compartment_length = 19 # length in millimeters of the biopsy needle core compartment
-    biopsy_fire_travel_distances = [15,22] # how far the needle tip travels from unfired to fired position, for the magnum bard there were two penetration depth settings
-    biopsy_needle_tip_length = 6 # tip to compartment distance
-    voxel_size_for_structure_volume_calc_bx = 0.1 # if set to 0 then it is calculated based on the maximum pairwise distance of the structure
-    voxel_size_for_structure_volume_calc_non_bx = 1
-    voxel_size_for_structure_dimension_calc = 0.1 # this one is of calculating the length dimension of each structure at the position of the centroid!
-    factor_for_voxel_size = 100 # only relevant if one of the above variables (voxel_size_for_structure_volume_calc_XXX) is equal to 0!
-    
-    # A note on radius vs knn for normal estimation
-    """
-    Radius or K-neighbors: When using methods like k-nearest neighbors or radius search for normal estimation, 
-    the choice of the radius or the number of neighbors can affect accuracy. A smaller radius or fewer neighbors 
-    might capture finer details but could also be sensitive to noise, while a larger radius or more neighbors might 
-    provide a smoother result but could miss smaller features.
-    """
-    # It may be best at this point to be consistent at 1mm
-    radius_for_normals_estimation = 1 # Making this larger produces better normals on a sphere, but too large may have undesired effects??
-    radius_for_curvature_estimation = 1 # This is the radius for determination of tangent plane normal, making this large tends to uniformize the pointwise curvature values
-    max_nn_for_normals_estimation = 30
-
-
-    # MC parameters
-    simulate_uniform_bx_shifts_due_to_bx_needle_compartment = True
-    #num_sample_pts_per_bx_input = 250 # uncommenting this line will do nothing, this line is deprecated in favour of constant cubic lattice spacing
-    bx_sample_pts_lattice_spacing = 1
-    num_MC_containment_simulations_input = 10000
-    keep_light_containment_and_distances_to_relative_structures_dataframe_bool = True # This option specifies whether we keep the dataframe that gives all trial information between containment and distance between biopsy and relative structures. Note that each biopsy dataframe is about 100 MB
-    num_MC_dose_simulations_input = 10000
-    num_MC_MR_simulations_input = num_MC_dose_simulations_input ### IMPORTANT, THIS NUMBER IS ALSO USED FOR MR IMAGING SIMULATIONS since we want to randomly sample from trials for our experiment, so them being the same amount will allow for this more succinctly. Since the way the localization is performed is the same for each (Ie. NN KDTree) these numbers should affect performance similarly
-    biopsy_z_voxel_length = 1 #voxelize biopsy core every 1 mm along core
-    num_dose_calc_NN = 4 # This determines the number of nearest neighbours to the dosimetric lattice for each biopsy sampled point
-    num_mr_calc_NN = 4 # This determines the number of nearest neighbours to the MR lattice for each biopsy sampled point  
-    idw_power = 1 # This determines the power of the inverse distance weighting (interpolation) for the NN dose search of the dose lattice!
-    tissue_length_above_probability_threshold_list = [0.95,0.75,0.5,0.25]
-    n_bootstraps_for_tissue_length_above_threshold = 1000
-    raw_data_mc_dosimetry_dump_bool = False # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for dose tests! 
-    raw_data_mc_containment_dump_bool = False  # ALSO SLOWS EVERYTHING DOWN! WARNING: MAY TAKE UP HUNDREDS OF GIGS OF DISK SPACE! USE WITH CAUTION! IF WANT TO REDUCE SIZE, REDUCE NUMBER OF DOSE AND CONTAINMENT SIMULATIONS! If True, will output the raw results data of the mc sim for containment tests!
-    raw_data_mc_MR_dump_bool = False # Haven't actually set this one to True yet but likely takes huge amount of space like the two above!
-    cuml_NN_algo = 'brute' # not sure what the other options are for cuml, using brute because I want absolute accuracy
-    nn_search_end_cap_grid_factor = 0.1
-    svg_image_scale = 1 # setting this value to something not equal to 1 produces misaligned plots with multiple traces!
-    svg_image_height = 1080
-    svg_image_width = 1920
-    optimizer_v2_initial_trial_prefix = 16 # minimum shared trial prefix used before the first adaptive prune round
-    optimizer_v2_trial_block_size = 16 # minimum appended shared trial block per adaptive prune round
-    optimizer_v2_max_total_trials = 256 # hard optimizer ceiling before final winner-resolution rescoring
-    optimizer_v2_max_test_structures_per_call = None # Fixed kernel-call structure budget override. Leave as None to auto-calibrate once per optimizer-v2 run.
-    optimizer_v2_fallback_max_test_structures_per_call = 4000000 # Static carry-forward structure budget derived from the last successful ~4.4M calibration on this machine; used when auto-calibration is disabled or if calibration fails.
-    optimizer_v2_auto_calibrate_max_test_structures_per_call = True # When True and no fixed override is supplied, estimate a safe package-level call budget once against the run's worst-case geometry.
-    optimizer_v2_verify_calibrated_max_test_structures_per_call = False # Applies only to the auto-calibration path: False = use the estimated budget directly; True = run the expensive real-call verification loop.
-    optimizer_v2_mean_pd_stage_prune_std_dev_threshold = 1.0 # Adaptive mean_pd rounds require a non-None threshold; tune this to prune more or less aggressively.
-    optimizer_v2_search_config = build_optimizer_v2_adaptive_block_search_config(
-        initial_trial_prefix=optimizer_v2_initial_trial_prefix,
-        trial_block_size=optimizer_v2_trial_block_size,
-        max_total_trials=optimizer_v2_max_total_trials,
-        mean_pd_stage_prune_std_dev_threshold=optimizer_v2_mean_pd_stage_prune_std_dev_threshold,
-        max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
-    )
-    optimizer_v2_max_candidates_per_chunk = None # Optimizer-level outer candidate chunk override. Leave as None to derive it dynamically from the calibrated structure budget; set a positive int to force a fixed outer chunk size without changing the CUDA containment module boundary.
-    optimizer_v2_validate_nearest_z_helper_against_ver5_bool = False # Validation sidecar OFF | impact high: Jun 03 nearest-z helper validation cost about 4.0 h on the 4-patient run; validates grouped nearest-z helper parity against ver5 during optimizer-v2 scoring.
-    optimizer_v2_benchmark_isolated_winner_validation_bool = False # Validation sidecar OFF | impact high: adds one extra downstream-comparable winner-validation-like optimizer pass per target structure; validates the final optimizer-v2 winner in isolation.
-    optimizer_v2_render_stage_boundary_candidate_clouds_bool = False # Opens one stage-switchable scene per v2 biopsy. Keep False for unattended dose-context artifact runs.
-    optimizer_v2_render_stage_names = None # None = render every adaptive prune round in order.
-    optimizer_v2_render_backend = "both" # open3d = multistage debug viewer, plotly = one scientific figure per rendered stage, both = run both backends.
-    optimizer_v2_render_plotly_export_bool = False # HERE # If True, export publication-oriented Plotly vector figures for the selected optimizer-v2 scenes.
-    optimizer_v2_render_plotly_export_formats = ("svg", "pdf")
-    optimizer_v2_render_plotly_export_width = svg_image_width
-    optimizer_v2_render_plotly_export_height = svg_image_height
-    optimizer_v2_render_plotly_export_scale = svg_image_scale
-    optimizer_v2_render_plotly_export_camera_eye = (1.45, -1.45, 2.25)
-    optimizer_v2_render_plotly_export_camera_center = (0.0, 0.0, 0.0)
-    optimizer_v2_render_plotly_export_camera_up = (0.0, 0.0, 1.0)
-    optimizer_v2_render_dialog_timeout_seconds = None # None waits indefinitely; set a positive number to auto-continue unattended render dialogs.
-    optimizer_v2_render_dialog_timeout_extend_seconds = 300.0 # Clicking More time adds this many seconds to the current render-dialog timeout.
-    optimizer_v2_render_winner_containment_debug_bool = False # If True, rerun the winning candidate with debug-localized points and render success/failure stochastic clouds against the target.
-    optimizer_v2_render_winner_containment_backend = "both" # open3d, plotly, both, or none for export-only.
-    optimizer_v2_render_include_target_points_bool = False # If False, omit the raw DIL point cloud and rely on contour-style target layers instead.
-    optimizer_v2_render_include_target_surface_bool = True # If True, show the target DIL contour surface layer in addition to the target-point cloud layer.
-    optimizer_v2_render_patient_whitelist = None # None = all patients, () = none, non-empty tuple = exact patient filter.
-    optimizer_v2_render_roi_whitelist = None # None = all ROIs, () = none, non-empty tuple = case-insensitive substring filter.
-    optimizer_v2_render_layer_style_by_name = {
-        "stage_input_candidates": {"color": np.array([0.88, 0.53, 0.10]), "marker_size": 2.0, "opacity": 0.28},
-        "stage_survivors": {"color": np.array([0.14, 0.68, 0.24]), "marker_size": 3.2, "opacity": 0.88},
-        "target_points": {"color": np.array([0.33, 0.63, 0.33]), "marker_size": 0.7, "opacity": 0.10},
-        "target_structure_centroid": {"marker_size": 8.0, "opacity": 1.0},
-        "nominal_biopsy_centroid": {"color": np.array([0.85, 0.20, 0.20]), "marker_size": 7.0, "opacity": 1.0},
-        "operational_winner": {"color": np.array([0.86, 0.12, 0.68]), "marker_size": 8.0, "opacity": 1.0},
-        "planned_sampled_points": {"marker_size": 1.8, "opacity": 0.40},
-        "planned_core_structure": {"line_width": 5.0, "opacity": 0.98},
-        "planned_centroid_line": {"line_width": 6.0, "opacity": 1.0},
-        "target_structure_surface": {"line_width": 4.8, "opacity": 0.96},
-        "prostate_structure": {"line_width": 4.0, "opacity": 0.90},
-        "urethra_structure": {"line_width": 4.5, "opacity": 1.0},
-        "rectum_structure": {"line_width": 3.8, "opacity": 0.88},
-    }
-    num_stochastic_targeting_transform_samples_input = 0 # Placeholder budget for a future stochastic-targeting stage before simulated-biopsy planning; currently only used when sizing shared transform precompute.
-    transform_generation_random_seed = 51
-    optimizer_v1_random_seed = 51
-
-    # custom point containment algorithm options
-    generate_cuda_log_files_MC_containment_sim = False
-    generate_cuda_log_files_volume_calculation = False
-    generate_cuda_log_files_structure_dimension_calculation = False
-    generate_cuda_log_files_biopsy_optimizer = False
-    include_edges_in_log_files = False
-
-    ### Kernel selection:
-    """
-    1. The type of kernel to use. The default is "one_to_one_pip_kernel_advanced". 
-    2. The other option is "one_to_one_pip_kernel_advanced_reparameterized_version" which is a version of that kernel that ALSO uses the reparameterized version of the mathematics which should in theory be more robust to regenerating rays. 
-    3. (MOST ADVANCED VERSION) The other is "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" which implements much better practices of gpu memory and performance optimization by not calculating poly_points at all, and passing pointers to indices instead to the kernel.
-    """
-    custom_cuda_kernel_type = "one_to_one_pip_kernel_advanced_reparameterized_version_gpu_memory_performance_optimized" 
-    constant_z_slice_polygons_handler_option = 'auto-close-if-open' # Can be 'auto-close-if-open' or 'close-all' or None
-    remove_consecutive_duplicate_points_in_polygons = True
-
-    num_dose_NN_to_show_for_animation_plotting = 100
-    num_bootstraps_for_regression_plots_input = 15
-    pio.templates.default = "plotly_white"
-    NPKR_bandwidth = 0.5
-    dpi_for_seaborn_plots = 100
-    open3d_views_jsons_folder_name = "open3d_views_jsons"
-    open3d_views_dose_folder_name = "dose_views"
-    open3d_views_containment_folder_name = "containment_views"
-    open_3d_screen_views_dose_jsons = ["ScreenCamera_2023-03-15-12-33-41.json", 
-                                       "ScreenCamera_2023-03-15-12-33-53.json",
-                                       "ScreenCamera_2023-03-15-13-07-02.json", 
-                                       "ScreenCamera_2023-03-15-13-08-08.json"
-                                       ]
-    open_3d_screen_views_containment_jsons = ["ScreenCamera_2023-02-19-15-14-47.json", 
-                                              "ScreenCamera_2023-02-19-15-27-46.json",
-                                              "ScreenCamera_2023-02-19-15-14-47.json", 
-                                              "ScreenCamera_2023-02-19-15-29-43.json"
-                                              ]
-    
-   
-    # for optimal dil sampling location
-    voxel_size_for_dil_optimizer_grid = 1
-    num_normal_dist_points_for_biopsy_optimizer = 10000
-    normal_dist_sigma_factor_biopsy_optimizer = 1/4
-    optimal_normal_dist_option = 'dil dimension driven' # can be 'biopsy_and_dil_sigmas' or 'dil dimension driven', note that the biopsy_and_dil_sigmas option adds all sigmas in quadrature and then uses this value as TWO sigma. Note that the dil deimnsion driven option uses the dimension of the respective dil at the position of the dil centroid in each direction as TWO sigma
-    # these multipliers provide a lengthening or stretching of the normal dist to bias a certain dimension as relatively more important 
-    bias_LR_multiplier = 1
-    bias_AP_multiplier = 1
-    bias_SI_multiplier = 1.5 
-    # for guidance maps 
-    number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation = 3 # number of optimal template holes to consider for guidance maps firing depth recommendation
-    render_guidance_maps_after_simulated_core_finalization = False
-    guidance_map_plot_name = "guidance maps"
-    guidance_map_output_dir_name = "Guidance maps"
-    guidance_map_save_formats = ("svg", "pdf", "html")
-    guidance_map_image_width = 1300
-    guidance_map_image_height = 1300
-    show_titles_for_guidance_maps = False
-    # Guidance-map plotting rank policy:
-    #   - int (e.g., 1 or 2): render that rank only
-    #   - list of ints (e.g., [1, 2, 3]): attempt each in order
-    #   - "all": render all available ranks for each DIL
-    candidate_plot_ranks_behavior = 'all'
-    # Validation/evidence sidecars default off after the Jun 03 clean parity run.
-    validate_firing_df_builder_behavior = False # Validation sidecar OFF | impact medium/high: exports guidance-map precompute contract CSVs and selection manifests; validates firing-depth dataframe-builder inputs/outputs.
-    run_simulated_biopsy_centroid_variation_validation_bool = False # Validation sidecar OFF | impact low: compares planned vs realized simulated-biopsy centroid variation metrics; re-enable when changing simulated-biopsy geometry/finalization.
-    validate_phase3b_in_memory_patient_stitching_bool = False # Validation sidecar OFF | impact low/medium: builds in-memory patient-fragment stitch comparison tables; validates patient-fragment assembly against final cohort dataframes.
-    write_phase3b_in_memory_stitched_tables_bool = False # Validation sidecar OFF | impact low IO: writes Phase 3B stitched evidence tables when the Phase 3B validation sidecar is enabled.
-    write_phase3c_patient_fragment_output_surface_bool = False # Validation sidecar OFF | impact low/medium IO: writes the Phase 3C patient-fragment artifact/schema surface; validates export coverage and stitch evidence.
-    write_phase3c_stitched_final_artifacts_bool = False # Validation sidecar OFF | impact low IO: writes stitched final tables inside the Phase 3C evidence surface when Phase 3C output validation is enabled.
-    patient_runner_validation_mode = PatientRunnerMainValidationMode.DISABLED.value # Overnight checkpoint ON | impact medium/high: captures per-stage scientific-shadow evidence and dataframe snapshots from the fresh post-discovery state boundary.
-    patient_runner_validation_patient_uids = ()
-    patient_runner_validation_final_table_names = ()
-    patient_runner_validation_source_table_names = ()
-    patient_runner_validation_write_outputs_bool = True # Overnight checkpoint ON | impact low/medium IO: writes patient-runner validation summaries/artifacts for post-run review.
-    patient_runner_validation_write_assembled_tables_bool = True # Overnight checkpoint ON | impact low/medium IO: writes assembled patient-runner tables for comparison against cohort tables.
-    patient_runner_validation_scientific_shadow_pathway_name = "full_current_pipeline_shadow"
-    patient_runner_validation_scientific_shadow_include_artifact_writing_bool = True
-    patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool = True
-    patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool = True
-    patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool = True
-    patient_runner_validation_scientific_shadow_state_isolation = "deep_copy_patient_state"
-    patient_scientific_runner_mode = "disabled" # Keep legacy-backed modular execution opt-in until standalone patient workers are validated.
-    patient_scientific_runner_checkpoint_name = "anatomical_qa"
-    patient_scientific_runner_pathway_name = "anatomical_qa"
-    patient_scientific_runner_patient_uids = () # Empty means all patients in legacy registry order when mode is plan_only or execute.
-    patient_scientific_runner_output_dir_name = DEFAULT_PATIENT_SCIENTIFIC_RUNNER_DIR_NAME
-    patient_scientific_runner_include_artifact_writing_bool = False
-    patient_scientific_runner_write_patient_run_manifests_bool = True
-    patient_scientific_runner_write_batch_run_manifest_bool = True
-    patient_scientific_runner_write_plan_summary_bool = True
-    patient_scientific_runner_max_workers = 1
-    patient_scientific_runner_execution_backend = "sequential"
-    patient_scientific_runner_satisfied_stage_names = ()
-    patient_scientific_runner_stop_on_stage_error_bool = True
-    patient_scientific_runner_raise_on_stage_error_bool = False
-    patient_scientific_runner_validate_dependencies_bool = True
-    patient_scientific_runner_persist_dose_context_artifacts_bool = False
-    patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool = True
-    patient_scientific_runner_dose_context_artifact_localization_kinds = ("dose",)
-    patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool = False
-    patient_scientific_runner_dose_nn_render_selector_biopsy_index = None
-    patient_scientific_runner_dose_nn_render_selector_localization_kind = "dose"
-    # Strict mode policy:
-    #   - True: fail fast on missing/invalid rank data (raises)
-    #   - False: skip problematic ranks, keep run alive, and log details in validation manifest/notes
-    strict_precomputed_guidance_behavior = False
-    # If False, Euler-angle annotation box is hidden on the map; Euler values remain in compact tables.
-    show_euler_annotation_box_behavior = False
-
-    # for simulated biopsies
-    centroid_dil_sim_key = 'Centroid DIL'
-    optimal_dil_sim_key = 'Optimal DIL'
-    target_dil_v2_sim_key = 'Target DIL v2'
-    bx_sim_locations_dict = {centroid_dil_sim_key:
-                                                            {"Create": True,
-                                                            "Relative to struct type": dil_ref,
-                                                            "Transport family": "centroid",
-                                                            "Identifier string": 'sim_centroid_dil'}
-                                                            ,   
-                                                        optimal_dil_sim_key:
-                                                            {"Create": True,
-                                                            "Relative to struct type": dil_ref,
-                                                            "Transport family": "optimal",
-                                                            "Identifier string": 'sim_optimal_dil'}
-                                                            ,
-                                                        target_dil_v2_sim_key:
-                                                            {"Create": True,
-                                                            "Relative to struct type": dil_ref,
-                                                            "Transport family": "identity",
-                                                            "Identifier string": 'sim_target_dil_v2'}
-                                                        }
-    simulated_biopsy_fraction_numbers_to_create = 'all'   # [FIRST_PASS_CONFIG] use [2] for legacy F2-only behavior
-    simulated_biopsy_length_method = 'match real'   # [FIRST_PASS_CONFIG] can be 'full' or 'match real'. Cohort-mean length modes were removed for patient-runner compatibility.
-                                                    # 'match real' uses a matched real biopsy length, then same-patient/same-DIL mean if available, then the full needle compartment length.
-    centroid_line_vec_sim_list = [0,0,1]
-    centroid_first_pos_sim_list = [0,0,0]
-    num_centroids_for_sim_bxs = 10
-    plot_simulated_cores_immediately = False
-    color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)', target_dil_v2_sim_key: 'rgba(26, 71, 42, 1)'}
-    biopsy_pcd_colors_dict = {'Real': np.array([0.5, 0.0, 0.5]), centroid_dil_sim_key: np.array([1.0, 0.55, 0.0]), optimal_dil_sim_key: np.array([0.0, 0.8, 0.6]), target_dil_v2_sim_key: np.array([0.1, 0.65, 0.2])} # real: purple, centroid: deep orange, optimal: light teal, target-v2: deep green
-
-    #bx_sim_locations = ['centroid'] # change to empty list if dont want to create any simulated biopsies. Also the code at the moment only supports creating centroid simulated biopsies, ie. change to list containing string 'centroid'.
-    #bx_sim_ref_identifier = "sim"
-    #simulate_biopsies_relative_to = ['DIL'] # can include elements in the list such as "DIL" or "Prostate"...
-
-
-    differential_dvh_resolution = 100 # the number of bins
-    cumulative_dvh_resolution = 100 # the larger the number the more resolution the cDVH calculations will have
-    display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
-    num_cumulative_dvh_plots_to_show = 25
-    num_differential_dvh_plots_to_show = 25
-    v_percent_DVH_to_calc_list = [100,125,150,200,300] # These are V_x, note that these values should be given as percentages relative to CTV, this is pulled automatically from plan ref, the output is a percent volume 
-    d_x_DVH_to_calc_list = [2,50,98] # These are D_x, x values should be given as percentages of the total volume (ie. between 0,100). the output is a dose value
-    volume_DVH_quantiles_to_calculate = [5,25,50,75,95]
-
-    # patient sample cohort analyzer
-    box_plot_points_option = 'outliers'
-    notch_option = False
-    boxmean_option = True # can be 'sd' or True
-
-    
-    
-    
-    
-    ### PLOTS TO SHOW:
-
-    # Preprocessing
-    demonstrate_volume_calculation_correctness_bool_1 = False # Volume ---- NEW CUSTOM CONTAINMENT ALGO: shows the volume calculation from PIP test
-    plot_volume_calculation_containment_result_bool_1_old = False # Volume ---- OLD CUSPATIAL CONTAINMENT ALGO: shows the volume calculation from PIP test
-    demonstrate_structure_dimension_calculation_correctness_bool_1 = False # Dimension ---- NEW CUSTOM CONTAINMENT ALGO: shows the dimension calculation from PIP test
-    demonstrate_structure_dimension_calculation_correctness_bool_1_old = False # Dimension ---- OLD CUSPATIAL CONTAINMENT ALGO: shows the dimension calculation from PIP test
-
-
-    # Transformations
-    inspect_self_biopsy_dilate_bool = False # per trial basis
-    inspect_self_biopsy_dilate_and_rotate_bool = False # per trial basis
-    inspect_self_biopsy_dilate_and_rotate_and_translate_bool = False # per trial basis
-    inspect_relative_structure_rotate_and_shift_number = 0 # per trial basis, if 0 will not show any plots, make sure this number is less than the num_containment_sims value !
-    show_non_bx_relative_structure_z_dilation_bool = False # per trial basis
-    show_non_bx_relative_structure_xy_dilation_bool = False # per trial basis
-
-    # Dosimetry
-    show_NN_dose_demonstration_plots = False # this shows one trial at a time!!!
-    show_3d_dose_renderings = False
-    show_3d_dose_renderings_thresholded = False
-    show_NN_dose_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
-
-    # Tissue class and structure distances
-    show_num_containment_demonstration_plots = 0 # this shows one trial at a time!!!
-    containment_results_structure_types_to_show_per_trial = [oar_ref, dil_ref] # can be any combination of the structure references
-    plot_cupy_containment_distribution_results = False # nice because it shows all trials at once
-    show_num_nearest_neighbour_surface_boundary_demonstration = 0 # must be an integer, 0 means show none, you see one trial at a time
-    show_num_relative_structure_centroid_demonstration = 0 # must be an integer, 0 means show none, you see one trial at a time
-    check_if_end_caps_filled_proper_NN_num = 0
-
-    # DIL biopsy optimization
-    demonstrate_dil_optimization_points_inside_correctness_bool_1 = False # shows the containment results for the generated lattice points that is passed to the optimizer function
-    demonstrate_dil_optimization_points_inside_correctness_bool_2 = False # shows the containment results for the generated lattice inside the optiomizer function, which is only caleld if you didnt pass the optimizer function a lattice. We are currently passing it a lattice.
-    demonstrate_dil_optimization_points_inside_correctness_num_3 = 0 # 0, means off! Shows the containment results for all normal distritution generated points centered at each test point lattice position, shows random 5 trials
-    plot_each_normal_dist_containment_result_bool = False
-    plot_optimization_point_lattice_bool = False
-    show_optimization_point_bool = False
-    display_optimization_contour_plots_bool = False
-
-    # MRs
-    show_3d_mr_adc_renderings = False
-    show_3d_mr_adc_renderings_thresholded = False
-    show_NN_mr_adc_demonstration_plots = False # this shows one trial at a time!!
-    show_NN_mr_adc_demonstration_plots_all_trials_at_once = False # nice because shows all trials at once
-    demonstrate_mr_adc_pcd_containment_correctness_bool = False # This shows the containment results for the MR ADC point cloud within prostate, which is generated from the MR ADC image
-    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool = False # This shows the containment results for the MR ADC point cloud within prostate ONLY, ie urethra , DIL and rectum points have been removed
-    
-    # Combined
-    show_processed_3d_datasets_renderings = False
-    show_processed_3d_datasets_renderings_plotly_dict = {"Plot": False, # If false then the rest of the options are irrelevant
-                                                         "SS Scatter": False,
-                                                         "SS Contour": True,
-                                                         "Dosimetric render mode": "volume", # can be "volume" or "scatter"
-                                                         "Dosimetric dose log scale": True, # If false then its linear
-                                                         "mr render mode": "volume", # can be "volume" or "scatter"
-                                                         "mr log scale": False, # If false then its linear
-                                                         }
-
-
-    # Misc
-    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot = False
-    plot_uniform_shifts_to_check_plotly = False # if this is true, will produce many plots if num_simulations is high!
-    plot_translation_vectors_pointclouds = False
-    plot_shifted_biopsies = False
-    display_curvature_bool = False
-    display_structure_surface_mesh_bool = False
-    plot_binary_mask_bool = False
-    plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
-    show_equivalent_ellipsoid_from_pca_bool = False
-    display_pca_fit_variation_for_biopsies_bool = False
-    validate_selected_structures_module_against_legacy = False # Validation sidecar OFF | impact low/medium: validates the patient/module selected-structure path against the legacy cohort structure-selection output.
-    run_non_biopsy_structure_legacy_sidecar_validation_bool = False # Validation sidecar OFF | impact medium/high: reruns/restores the legacy non-biopsy preprocessing sidecar; validates per-patient non-biopsy structure processing against cohort-style legacy behavior.
-    validate_prostate_only_mr_adc_module_against_legacy = False # Validation sidecar OFF | impact medium: validates the prostate-only MR ADC per-patient module against legacy cohort behavior.
-
-    ###
-
-
-
-
-
-
-
-    ### Legacy plotting controls retained only for local simulated-biopsy playback.
-    
-    plot_immediately_after_simulation = True
-    # other parameters
-    modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
-    write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
-    write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
-    export_pickled_preprocessed_data = False # If True, this exports a pickled version of master_structure_reference_dict and master_structure_info_dict
-    skip_preprocessing = False # If True, you will be asked to specify the locations of master_structure_info_dict and master_structure_reference_dict
-    write_preprocessing_data_to_file = True
-    write_cohort_data_to_file = True
-
-    cupy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR GPU MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR A 3080 TI WITH 12GB VRAM!
-    numpy_array_upper_limit_NxN_size_input = 1e9 ### THIS IS A NUMBER THAT IS LIMITED BY YOUR RAM MEMORY! APPROXIMATELY 1e9 IS A GOOD COMPROMISE FOR 32GB RAM!
-    nearest_zslice_vals_and_indices_cupy_generic_max_size = 5e7 # 5e7 was stable
-    nearest_zslice_vals_and_indices_numpy_generic_max_size = 1e9
-
-    # for dataframe builder
-    cancer_tissue_label = 'DIL'
-    miss_structure_complement_label = structure_miss_probability_roi + ' complement'
-    default_exterior_tissue = 'Periprostatic' # For tissue class stuff! Basically dictates what to call tissue that doesnt lie in any defined structure!
-    prostate_tissue_label = 'Prostatic'
-    rectal_tissue_label = 'Rectal'
-    urethral_tissue_label = 'Urethral'
-
-    # Tissue volume threshold operator dictionary
-    # This is a dictionary that contains the operator to use for the volume thresholding.
-    tissue_volume_operator_dictionary = {cancer_tissue_label: 'greater',
-                                         prostate_tissue_label: 'greater',
-                                         rectal_tissue_label: 'less',
-                                         urethral_tissue_label: 'less',
-                                         default_exterior_tissue: 'less'
-                                         }
-
-
-    # non-user changeable variables, but need to be initiatied:
-    
-    # DO NOT CHANGE THE ORDER OF THE KEYS IN THE BELOW DICTIONARY!!!! 
-    structs_referenced_dict = { bx_ref: {"Contour names": biopsy_contour_names,
-                                        "Default mu X": biopsy_default_mu_X_list,
-                                        "Default mu Y": biopsy_default_mu_Y_list,
-                                        "Default mu Z": biopsy_default_mu_Z_list,  
-                                        "Default sigma X": biopsy_default_sigma_X_list,
-                                        "Default sigma Y": biopsy_default_sigma_Y_list,
-                                        "Default sigma Z": biopsy_default_sigma_Z_list,
-                                        "Dilations mu (xy)": biopsy_dilations_default_mu_XY_list,
-                                        "Dilations mu (z)": biopsy_dilations_default_mu_Z_list,
-                                        "Dilations sigma (xy)": biopsy_dilations_default_sigma_XY_list,
-                                        "Dilations sigma (z)": biopsy_dilations_default_sigma_Z_list,
-                                        "Rotations mu X": biopsy_rotations_default_mu_X_list,
-                                        "Rotations mu Y": biopsy_rotations_default_mu_Y_list,
-                                        "Rotations mu Z": biopsy_rotations_default_mu_Z_list,
-                                        "Rotations sigma X": biopsy_rotations_default_sigma_X_list,
-                                        "Rotations sigma Y": biopsy_rotations_default_sigma_Y_list,
-                                        "Rotations sigma Z": biopsy_rotations_default_sigma_Z_list,
-                                        'Test tissue class': None, # should always be None
-                                        'Tissue heirarchy': None, # should always be None
-                                        'Tissue class name': None, # Not used for anything as of yet..
-                                        'PCD color dict': biopsy_pcd_colors_dict
-                                        }, 
-                                oar_ref: {"Contour names": oaroi_contour_names,
-                                          "Default mu X": oar_default_mu_X_list,
-                                          "Default mu Y": oar_default_mu_Y_list,
-                                          "Default mu Z": oar_default_mu_Z_list, 
-                                          "Default sigma X": oar_default_sigma_X_list,
-                                          "Default sigma Y": oar_default_sigma_Y_list,
-                                          "Default sigma Z": oar_default_sigma_Z_list,
-                                          "Dilations mu (xy)": oar_dilations_default_mu_XY_list,
-                                          "Dilations mu (z)": oar_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": oar_dilations_default_sigma_XY_list,
-                                          "Dilations sigma (z)": oar_dilations_default_sigma_Z_list,
-                                          "Rotations mu X": oar_rotations_default_mu_X_list,
-                                          "Rotations mu Y": oar_rotations_default_mu_Y_list,
-                                          "Rotations mu Z": oar_rotations_default_mu_Z_list,
-                                          "Rotations sigma X": oar_rotations_default_sigma_X_list,
-                                          "Rotations sigma Y": oar_rotations_default_sigma_Y_list,
-                                          "Rotations sigma Z": oar_rotations_default_sigma_Z_list,
-                                          'Test tissue class': True,
-                                          'Tissue heirarchy': 3,
-                                          'Tissue class name': prostate_tissue_label, 
-                                          'PCD color': np.array([0.86, 0.08, 0.24]) # crimson
-                                          }, 
-                                dil_ref: {"Contour names": dil_contour_names,
-                                          "Default mu X": dil_default_mu_X_list,
-                                          "Default mu Y": dil_default_mu_Y_list,
-                                          "Default mu Z": dil_default_mu_Z_list, 
-                                          "Default sigma X": dil_default_sigma_X_list,
-                                          "Default sigma Y": dil_default_sigma_Y_list,
-                                          "Default sigma Z": dil_default_sigma_Z_list,
-                                          "Dilations mu (xy)": dil_dilations_default_mu_XY_list,
-                                          "Dilations mu (z)": dil_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": dil_dilations_default_sigma_XY_list,
-                                          "Dilations sigma (z)": dil_dilations_default_sigma_Z_list,
-                                          "Rotations mu X": dil_rotations_default_mu_X_list,
-                                          "Rotations mu Y": dil_rotations_default_mu_Y_list,
-                                          "Rotations mu Z": dil_rotations_default_mu_Z_list,
-                                          "Rotations sigma X": dil_rotations_default_sigma_X_list,
-                                          "Rotations sigma Y": dil_rotations_default_sigma_Y_list,
-                                          "Rotations sigma Z": dil_rotations_default_sigma_Z_list,
-                                          'Test tissue class': True,
-                                          'Tissue heirarchy': 0,
-                                          'Tissue class name': cancer_tissue_label,
-                                          'PCD color': np.array([0.13, 0.55, 0.13]) # forest green
-                                          },
-                                rectum_ref_key: {"Contour names": rectum_contour_names,
-                                          "Default mu X": rectum_default_mu_X_list,
-                                          "Default mu Y": rectum_default_mu_Y_list,
-                                          "Default mu Z": rectum_default_mu_Z_list, 
-                                          "Default sigma X": rectum_default_sigma_X_list,
-                                          "Default sigma Y": rectum_default_sigma_Y_list,
-                                          "Default sigma Z": rectum_default_sigma_Z_list,
-                                          "Dilations mu (xy)": rectum_dilations_default_mu_XY_list,
-                                          "Dilations mu (z)": rectum_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": rectum_dilations_default_sigma_XY_list,
-                                          "Dilations sigma (z)": rectum_dilations_default_sigma_Z_list,
-                                          "Rotations mu X": rectum_rotations_default_mu_X_list,
-                                          "Rotations mu Y": rectum_rotations_default_mu_Y_list,
-                                          "Rotations mu Z": rectum_rotations_default_mu_Z_list,
-                                          "Rotations sigma X": rectum_rotations_default_sigma_X_list,
-                                          "Rotations sigma Y": rectum_rotations_default_sigma_Y_list,
-                                          "Rotations sigma Z": rectum_rotations_default_sigma_Z_list,
-                                          'Test tissue class': True,
-                                          'Tissue heirarchy': 2,
-                                          'Tissue class name': rectal_tissue_label,
-                                          'PCD color': np.array([1.0, 0.84, 0.0]) # gold
-                                          },
-                                urethra_ref_key: {"Contour names": urethra_contour_names,
-                                          "Default mu X": urethra_default_mu_X_list,
-                                          "Default mu Y": urethra_default_mu_Y_list,
-                                          "Default mu Z": urethra_default_mu_Z_list, 
-                                          "Default sigma X": urethra_default_sigma_X_list,
-                                          "Default sigma Y": urethra_default_sigma_Y_list,
-                                          "Default sigma Z": urethra_default_sigma_Z_list,
-                                          "Dilations mu (xy)": urethra_dilations_default_mu_XY_list,
-                                          "Dilations mu (z)": urethra_dilations_default_mu_Z_list,
-                                          "Dilations sigma (xy)": urethra_dilations_default_sigma_XY_list,
-                                          "Dilations sigma (z)": urethra_dilations_default_sigma_Z_list,
-                                          "Rotations mu X": urethra_rotations_default_mu_X_list,
-                                          "Rotations mu Y": urethra_rotations_default_mu_Y_list,
-                                          "Rotations mu Z": urethra_rotations_default_mu_Z_list,
-                                          "Rotations sigma X": urethra_rotations_default_sigma_X_list,
-                                          "Rotations sigma Y": urethra_rotations_default_sigma_Y_list,
-                                          "Rotations sigma Z": urethra_rotations_default_sigma_Z_list,
-                                          'Test tissue class': True,
-                                          'Tissue heirarchy': 1,
-                                          'Tissue class name': urethral_tissue_label,
-                                          'PCD color': np.array([0.0, 0.75, 1.0]) # sky blue
-                                          } 
-                                }
-    #structs_referenced_list = list(structs_referenced_dict.keys()) # note that Bx ref has to be the first entry for other parts of the code to work! In fact the ordering of all entries must be maintained. 1. BX, 2. OAR, 3. DIL
-    structs_referenced_list = [key for key, value in structs_referenced_dict.items() if value.get('Test tissue class', False)]
-    structs_referenced_list.insert(0,bx_ref) # this inserts bx_ref to the beginning of the list!
-    
-
-    ### IMPORTANT
-    # this is a generalized version of structs referenced list, structs referenced list is the list that is referenced 
-    # for the main tissue containement testing pipeline. The generalized version contains references that are not 
-    # necessarily tested in the containment testing pipeline
-    ### THE ORDER OF THE ENTRIES IN STRUCTS REFERENCED LIST IS IMPORTANT, BUT IT SHOULDNT BE! DONT RELY ON ORDERING WHEN POSSIBLE
-    # the idea for the future is that you should be able to add entries to structs referenced dict for each structure you want to test
-    # tissue class against by changing Test tissue class to True. but this should be done very carefully because the ordering of the references in structs_referenced_list matter,
-    # the way I built the code was not thought out in this way, it depends on the ordering but really it shouldnt.
-    structs_referenced_list_generalized = list(structs_referenced_dict.keys())
-    
-    # structs_referenced_list_generalized_unique_structs represents structure types that have a unique structure, ie. there is only one 
-    structs_referenced_list_generalized_unique_structs = copy.deepcopy(structs_referenced_list_generalized)
-    structs_referenced_list_generalized_unique_structs.remove(bx_ref)
-    structs_referenced_list_generalized_unique_structs.remove(dil_ref)
-
-
-    dose_ref = "Dose ref"
-    plan_ref = "Plan ref"
-    mr_adc_ref = "MR ADC ref"
-    mr_t2_ref = "MR T2 ref"
-    us_ref = "US ref"
-    num_simulated_bxs_to_create = sum([x["Create"] for x in bx_sim_locations_dict.values()])
-    #num_simulated_bxs_to_create = len(bx_sim_locations)
-    #if num_simulated_bxs_to_create == 0:
-    #    simulate_biopsies_relative_to = []
-    validation_sidecar_defaults = ValidationSidecarConfig(
-        selected_structures_against_legacy=validate_selected_structures_module_against_legacy,
-        non_biopsy_structures_against_legacy=run_non_biopsy_structure_legacy_sidecar_validation_bool,
-        prostate_only_mr_adc_against_legacy=validate_prostate_only_mr_adc_module_against_legacy,
-        guidance_map_dataframe_builder=validate_firing_df_builder_behavior,
-        simulated_biopsy_centroid_variation=run_simulated_biopsy_centroid_variation_validation_bool,
-    )
-    output_validation_defaults = OutputValidationConfig(
-        phase3b_in_memory_patient_stitching=validate_phase3b_in_memory_patient_stitching_bool,
-        write_phase3b_in_memory_stitched_tables=write_phase3b_in_memory_stitched_tables_bool,
-        phase3c_patient_fragment_output_surface=write_phase3c_patient_fragment_output_surface_bool,
-        write_phase3c_stitched_final_artifacts=write_phase3c_stitched_final_artifacts_bool,
-    )
-    patient_runner_validation_defaults = PatientRunnerValidationHookConfig(
-        mode=patient_runner_validation_mode,
-        patient_uids=patient_runner_validation_patient_uids,
-        final_table_names=patient_runner_validation_final_table_names,
-        source_table_names=patient_runner_validation_source_table_names,
-        write_outputs=patient_runner_validation_write_outputs_bool,
-        write_assembled_tables=patient_runner_validation_write_assembled_tables_bool,
-        scientific_shadow_pathway_name=patient_runner_validation_scientific_shadow_pathway_name,
-        scientific_shadow_include_artifact_writing=patient_runner_validation_scientific_shadow_include_artifact_writing_bool,
-        scientific_shadow_write_patient_run_manifests=patient_runner_validation_scientific_shadow_write_patient_run_manifests_bool,
-        scientific_shadow_write_stage_state_manifests=patient_runner_validation_scientific_shadow_write_stage_state_manifests_bool,
-        scientific_shadow_include_dataframe_snapshots=patient_runner_validation_scientific_shadow_include_dataframe_snapshots_bool,
-        scientific_shadow_state_isolation=patient_runner_validation_scientific_shadow_state_isolation,
-    )
-    patient_scientific_runner_defaults = PatientScientificRunnerExecutionConfig(
-        mode=patient_scientific_runner_mode,
-        checkpoint_name=patient_scientific_runner_checkpoint_name,
-        pathway_name=patient_scientific_runner_pathway_name,
-        patient_uids=patient_scientific_runner_patient_uids,
-        output_dir_name=patient_scientific_runner_output_dir_name,
-        include_artifact_writing=patient_scientific_runner_include_artifact_writing_bool,
-        write_patient_run_manifests=patient_scientific_runner_write_patient_run_manifests_bool,
-        write_batch_run_manifest=patient_scientific_runner_write_batch_run_manifest_bool,
-        write_plan_summary=patient_scientific_runner_write_plan_summary_bool,
-        max_workers=patient_scientific_runner_max_workers,
-        execution_backend=patient_scientific_runner_execution_backend,
-        satisfied_stage_names=patient_scientific_runner_satisfied_stage_names,
-        stop_on_stage_error=patient_scientific_runner_stop_on_stage_error_bool,
-        raise_on_stage_error=patient_scientific_runner_raise_on_stage_error_bool,
-        validate_dependencies=patient_scientific_runner_validate_dependencies_bool,
-        persist_dose_context_artifacts=patient_scientific_runner_persist_dose_context_artifacts_bool,
-        persist_dose_nn_render_context_artifacts=patient_scientific_runner_persist_dose_nn_render_context_artifacts_bool,
-        dose_context_artifact_localization_kinds=patient_scientific_runner_dose_context_artifact_localization_kinds,
-        launch_dose_nn_render_selector_after_persisting_artifacts=(
-            patient_scientific_runner_launch_dose_nn_render_selector_after_persisting_artifacts_bool
-        ),
-        dose_nn_render_selector_biopsy_index=patient_scientific_runner_dose_nn_render_selector_biopsy_index,
-        dose_nn_render_selector_localization_kind=patient_scientific_runner_dose_nn_render_selector_localization_kind,
-    )
-    pipeline_config = PipelineConfig(
-        ui=RuntimeUIConfig(
-            spinner_type=spinner_type,
-            rich_live_display_bool=rich_live_display_bool,
-        ),
-        legacy_refs=LegacyReferenceConfig(
-            all_ref_key=all_ref_key,
-            bx_ref=bx_ref,
-            by_patient_key=by_patient_key,
-            global_key=global_key,
-            global_num_cases_key=global_num_cases_key,
-            oar_ref=oar_ref,
-            dil_ref=dil_ref,
-            rectum_ref_key=rectum_ref_key,
-            urethra_ref_key=urethra_ref_key,
-            dose_ref=dose_ref,
-            plan_ref=plan_ref,
-            mr_adc_ref=mr_adc_ref,
-            mr_t2_ref=mr_t2_ref,
-            us_ref=us_ref,
-        ),
-        structure_registry=StructureRegistryConfig(
-            structs_referenced_dict=structs_referenced_dict,
-            structs_referenced_list=structs_referenced_list,
-            structs_referenced_list_generalized=structs_referenced_list_generalized,
-            structs_referenced_list_generalized_unique_structs=(
-                structs_referenced_list_generalized_unique_structs
-            ),
-        ),
-        bootstrap=PatientBootstrapConfig(
-            removals=StructureDataRemovalPolicy(
-                biopsy=data_removals_dict_bx,
-                prostate=data_removals_dict_prostate,
-                dil=data_removals_dict_dil,
-                urethra=data_removals_dict_urethra,
-                rectum=data_removals_dict_rectum,
-            ),
-            contours=StructureContourPolicy(
-                oar=oaroi_contour_names,
-                dil=dil_contour_names,
-                biopsy=biopsy_contour_names,
-                rectum=rectum_contour_names,
-                urethra=urethra_contour_names,
-            ),
-            simulated_biopsies=SimulatedBiopsyBootstrapPolicy(
-                locations=bx_sim_locations_dict,
-                fraction_numbers_to_create=simulated_biopsy_fraction_numbers_to_create,
-                fraction_prefixes=fraction_prefixes,
-            ),
-        ),
-        grid_preprocessing=GridPreprocessingConfig(
-            show_3d_dose_renderings=show_3d_dose_renderings,
-            show_3d_dose_renderings_thresholded=show_3d_dose_renderings_thresholded,
-            show_3d_mr_adc_renderings=show_3d_mr_adc_renderings,
-            show_3d_mr_adc_renderings_thresholded=show_3d_mr_adc_renderings_thresholded,
-        ),
-        biopsy=BiopsyRuntimeConfig(
-            geometry=BiopsyGeometryConfig(
-                biopsy_radius=biopsy_radius,
-                simulated_biopsy_planning_radius_mm=simulated_biopsy_planning_radius_mm,
-                biopsy_fire_travel_distances=biopsy_fire_travel_distances,
-                biopsy_needle_tip_length=biopsy_needle_tip_length,
-                display_pca_fit_variation_for_biopsies_bool=display_pca_fit_variation_for_biopsies_bool,
-            ),
-            simulated=SimulatedBiopsyConfig(
-                optimizer_simulated_type=target_dil_v2_sim_key,
-                simulated_biopsy_length_method=simulated_biopsy_length_method,
-                centroid_line_vec_sim_list=centroid_line_vec_sim_list,
-                centroid_first_pos_sim_list=centroid_first_pos_sim_list,
-                num_centroids_for_sim_bxs=num_centroids_for_sim_bxs,
-                plot_simulated_cores_immediately=plot_simulated_cores_immediately,
-            ),
-            sampling=SamplingClassificationConfig(
-                show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot=(
-                    show_reconstructed_biopsy_in_biopsy_coord_sys_tr_and_rot
-                ),
-            ),
-        ),
-        artifacts=ArtifactConfig(
-            output_folder_name=output_folder_name,
-            preprocessed_data_folder_name=preprocessed_data_folder_name,
-            preprocessed_reference_dict_filename=preprocessed_master_structure_ref_dict_for_export_name,
-            preprocessed_info_dict_filename=preprocessed_master_structure_info_dict_for_export_name,
-            export_pickled_preprocessed_data=export_pickled_preprocessed_data,
-            skip_preprocessing=skip_preprocessing,
-        ),
-        preprocessing=PreprocessingConfig(
-            interpolation=PreprocessingInterpolationConfig(
-                interp_inter_slice_dist=interp_inter_slice_dist,
-                interp_intra_slice_dist=interp_intra_slice_dist,
-                interp_dist_caps=interp_dist_caps,
-            ),
-            geometry=PreprocessingGeometryConfig(
-                radius_for_normals_estimation=radius_for_normals_estimation,
-                max_nn_for_normals_estimation=max_nn_for_normals_estimation,
-                voxel_size_for_structure_volume_calc_non_bx=voxel_size_for_structure_volume_calc_non_bx,
-                voxel_size_for_structure_dimension_calc=voxel_size_for_structure_dimension_calc,
-                factor_for_voxel_size=factor_for_voxel_size,
-            ),
-            kernel_execution=PreprocessingKernelExecutionConfig(
-                cupy_array_upper_limit_nxn_size_input=cupy_array_upper_limit_NxN_size_input,
-                nearest_zslice_vals_and_indices_cupy_generic_max_size=(
-                    nearest_zslice_vals_and_indices_cupy_generic_max_size
-                ),
-                constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-                remove_consecutive_duplicate_points_in_polygons=(
-                    remove_consecutive_duplicate_points_in_polygons
-                ),
-                include_edges_in_log_files=include_edges_in_log_files,
-                custom_cuda_kernel_type=custom_cuda_kernel_type,
-            ),
-            debug=PreprocessingDebugConfig(
-                generate_cuda_log_files_volume_calculation=generate_cuda_log_files_volume_calculation,
-                demonstrate_volume_calculation_correctness_bool_1=(
-                    demonstrate_volume_calculation_correctness_bool_1
-                ),
-                plot_volume_calculation_containment_result_bool_1_old=(
-                    plot_volume_calculation_containment_result_bool_1_old
-                ),
-                plot_binary_mask_bool=plot_binary_mask_bool,
-                generate_cuda_log_files_structure_dimension_calculation=(
-                    generate_cuda_log_files_structure_dimension_calculation
-                ),
-                demonstrate_structure_dimension_calculation_correctness_bool_1=(
-                    demonstrate_structure_dimension_calculation_correctness_bool_1
-                ),
-                demonstrate_structure_dimension_calculation_correctness_bool_1_old=(
-                    demonstrate_structure_dimension_calculation_correctness_bool_1_old
-                ),
-                demonstrate_mr_adc_pcd_containment_correctness_bool=(
-                    demonstrate_mr_adc_pcd_containment_correctness_bool
-                ),
-                demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool=(
-                    demonstrate_mr_adc_pcd_containment_correctness_prostate_only_all_other_structures_removed_bool
-                ),
-                display_structure_surface_mesh_bool=display_structure_surface_mesh_bool,
-                show_equivalent_ellipsoid_from_pca_bool=show_equivalent_ellipsoid_from_pca_bool,
-            ),
-        ),
-        replay=RuntimeReplayConfig(
-            lower_bound_dose_value=lower_bound_dose_value,
-            lower_bound_dose_gradient_value=lower_bound_dose_gradient_value,
-            lower_bound_mr_adc_value=lower_bound_mr_adc_value,
-            upper_bound_mr_adc_value=upper_bound_mr_adc_value,
-            color_flattening_deg_mr=color_flattening_deg_MR,
-        ),
-        guidance_maps=GuidanceMapConfig(
-            planning_config=GuidanceMapPlanningConfig(
-                candidate_holes_k=number_of_optimal_template_holes_to_consider_for_guidance_maps_firing_depth_recommendation,
-                candidate_axis_line_length_mm=1000,
-            ),
-            render_config=GuidanceMapRenderConfig(
-                enabled=render_guidance_maps_after_simulated_core_finalization,
-                plot_name=guidance_map_plot_name,
-                output_dir_name=guidance_map_output_dir_name,
-                save_formats=guidance_map_save_formats,
-                image_width=guidance_map_image_width,
-                image_height=guidance_map_image_height,
-                image_scale=svg_image_scale,
-                axis_title_font_size=24,
-                axis_tick_font_size=20,
-                legend_font_size=20,
-                annotation_font_size=20,
-                distance_annotation_font_size=20,
-                fire_annotation_font_size=20,
-                colorbar_tick_font_size=20,
-                template_label_font_size=20,
-                colorbar_title_font_size=20,
-                fire_annotation_style="compact_table",
-                fire_table_position="outside top center",
-                draw_orientation_diagram=False,
-                show_titles=show_titles_for_guidance_maps,
-                show_euler_annotation_box=show_euler_annotation_box_behavior,
-                candidate_plot_rank=candidate_plot_ranks_behavior,
-                validate_firing_df_builder=validation_sidecar_defaults.guidance_map_dataframe_builder,
-                strict_precomputed_guidance=strict_precomputed_guidance_behavior,
-            )
-        ),
-        optimizer=OptimizerRuntimeConfig(
-            optimizer_v2_search_config=optimizer_v2_search_config,
-            num_stochastic_targeting_transform_samples_input=(
-                num_stochastic_targeting_transform_samples_input
-            ),
-            optimizer_v2=OptimizerV2RuntimeConfig(
-                search_config=optimizer_v2_search_config,
-                capacity=OptimizerV2CapacityConfig(
-                    max_candidates_per_chunk=optimizer_v2_max_candidates_per_chunk,
-                    max_test_structures_per_call=optimizer_v2_max_test_structures_per_call,
-                    fallback_max_test_structures_per_call=optimizer_v2_fallback_max_test_structures_per_call,
-                    auto_calibrate_max_test_structures_per_call=(
-                        optimizer_v2_auto_calibrate_max_test_structures_per_call
-                    ),
-                    verify_calibrated_max_test_structures_per_call=(
-                        optimizer_v2_verify_calibrated_max_test_structures_per_call
-                    ),
-                ),
-                diagnostics=OptimizerV2DiagnosticsConfig(
-                    validate_nearest_z_helper_against_ver5=(
-                        optimizer_v2_validate_nearest_z_helper_against_ver5_bool
-                    ),
-                    benchmark_isolated_winner_validation_bool=(
-                        optimizer_v2_benchmark_isolated_winner_validation_bool
-                    ),
-                ),
-                rendering=OptimizerV2RenderConfig(
-                    render_stage_boundary_candidate_clouds_bool=(
-                        optimizer_v2_render_stage_boundary_candidate_clouds_bool
-                    ),
-                    render_stage_names_to_render=optimizer_v2_render_stage_names,
-                    render_backend=optimizer_v2_render_backend,
-                    render_layer_style_by_name=optimizer_v2_render_layer_style_by_name,
-                    plotly_export=OptimizerV2PlotlyExportConfig(
-                        enabled=optimizer_v2_render_plotly_export_bool,
-                        formats=optimizer_v2_render_plotly_export_formats,
-                        width=optimizer_v2_render_plotly_export_width,
-                        height=optimizer_v2_render_plotly_export_height,
-                        scale=optimizer_v2_render_plotly_export_scale,
-                        camera_eye=optimizer_v2_render_plotly_export_camera_eye,
-                        camera_center=optimizer_v2_render_plotly_export_camera_center,
-                        camera_up=optimizer_v2_render_plotly_export_camera_up,
-                    ),
-                    render_dialog_timeout_seconds=optimizer_v2_render_dialog_timeout_seconds,
-                    render_dialog_timeout_extend_seconds=optimizer_v2_render_dialog_timeout_extend_seconds,
-                    render_winner_containment_debug_bool=optimizer_v2_render_winner_containment_debug_bool,
-                    render_winner_containment_backend=optimizer_v2_render_winner_containment_backend,
-                    render_include_target_points_bool=optimizer_v2_render_include_target_points_bool,
-                    render_include_target_surface_bool=optimizer_v2_render_include_target_surface_bool,
-                    render_patient_whitelist=optimizer_v2_render_patient_whitelist,
-                    render_roi_whitelist=optimizer_v2_render_roi_whitelist,
-                ),
-                num_stochastic_targeting_transform_samples_input=(
-                    num_stochastic_targeting_transform_samples_input
-                ),
-            ),
-            optimizer_v1=OptimizerV1RuntimeConfig(
-                voxel_size_for_dil_optimizer_grid=voxel_size_for_dil_optimizer_grid,
-                optimal_normal_dist_option=optimal_normal_dist_option,
-                bias_LR_multiplier=bias_LR_multiplier,
-                bias_AP_multiplier=bias_AP_multiplier,
-                bias_SI_multiplier=bias_SI_multiplier,
-                num_normal_dist_points_for_biopsy_optimizer=(
-                    num_normal_dist_points_for_biopsy_optimizer
-                ),
-                normal_dist_sigma_factor_biopsy_optimizer=(
-                    normal_dist_sigma_factor_biopsy_optimizer
-                ),
-                plot_each_normal_dist_containment_result_bool=plot_each_normal_dist_containment_result_bool,
-                plot_optimization_point_lattice_bool=plot_optimization_point_lattice_bool,
-                show_optimization_point_bool=show_optimization_point_bool,
-                cupy_array_upper_limit_nxn_size_input=cupy_array_upper_limit_NxN_size_input,
-                numpy_array_upper_limit_nxn_size_input=numpy_array_upper_limit_NxN_size_input,
-                nearest_zslice_vals_and_indices_cupy_generic_max_size=(
-                    nearest_zslice_vals_and_indices_cupy_generic_max_size
-                ),
-                nearest_zslice_vals_and_indices_numpy_generic_max_size=(
-                    nearest_zslice_vals_and_indices_numpy_generic_max_size
-                ),
-                constant_z_slice_polygons_handler_option=constant_z_slice_polygons_handler_option,
-                remove_consecutive_duplicate_points_in_polygons=(
-                    remove_consecutive_duplicate_points_in_polygons
-                ),
-                include_edges_in_log_files=include_edges_in_log_files,
-                custom_cuda_kernel_type=custom_cuda_kernel_type,
-                demonstrate_dil_optimization_points_inside_correctness_bool_1=(
-                    demonstrate_dil_optimization_points_inside_correctness_bool_1
-                ),
-                demonstrate_dil_optimization_points_inside_correctness_bool_2=(
-                    demonstrate_dil_optimization_points_inside_correctness_bool_2
-                ),
-                demonstrate_dil_optimization_points_inside_correctness_num_3=(
-                    demonstrate_dil_optimization_points_inside_correctness_num_3
-                ),
-                generate_cuda_log_files_biopsy_optimizer=generate_cuda_log_files_biopsy_optimizer,
-                display_optimization_contour_plots_bool=display_optimization_contour_plots_bool,
-            ),
-        ),
-        random_seeds=RandomSeedConfig(
-            transform_generation_random_seed=transform_generation_random_seed,
-            optimizer_v1_random_seed=optimizer_v1_random_seed,
-        ),
-        mc=MonteCarloConfig(
-            counts=MCCountsConfig(
-                num_mc_containment_simulations_input=num_MC_containment_simulations_input,
-                num_mc_dose_simulations_input=num_MC_dose_simulations_input,
-                num_mc_mr_simulations_input=num_MC_MR_simulations_input,
-            ),
-            prep=MCPrepConfig(
-                simulate_uniform_bx_shifts_due_to_bx_needle_compartment=(
-                    simulate_uniform_bx_shifts_due_to_bx_needle_compartment
-                ),
-                biopsy_needle_compartment_length=biopsy_needle_compartment_length,
-                bx_sample_pts_lattice_spacing=bx_sample_pts_lattice_spacing,
-            ),
-            simulation=MCSimulationCoreConfig(
-                biopsy_z_voxel_length=biopsy_z_voxel_length,
-                num_dose_calc_nn=num_dose_calc_NN,
-                num_mr_calc_nn=num_mr_calc_NN,
-                idw_power=idw_power,
-                tissue_length_above_probability_threshold_list=tissue_length_above_probability_threshold_list,
-                n_bootstraps_for_tissue_length_above_threshold=(
-                    n_bootstraps_for_tissue_length_above_threshold
-                ),
-                differential_dvh_resolution=differential_dvh_resolution,
-                cumulative_dvh_resolution=cumulative_dvh_resolution,
-                v_percent_dvh_to_calc_list=v_percent_DVH_to_calc_list,
-                volume_dvh_quantiles_to_calculate=volume_DVH_quantiles_to_calculate,
-                cuml_nn_algo=cuml_NN_algo,
-                nn_search_end_cap_grid_factor=nn_search_end_cap_grid_factor,
-            ),
-            debug=MCDebugConfig(
-                inspect_self_biopsy_dilate_bool=inspect_self_biopsy_dilate_bool,
-                inspect_self_biopsy_dilate_and_rotate_bool=inspect_self_biopsy_dilate_and_rotate_bool,
-                inspect_self_biopsy_dilate_and_rotate_and_translate_bool=(
-                    inspect_self_biopsy_dilate_and_rotate_and_translate_bool
-                ),
-                inspect_relative_structure_rotate_and_shift_number=(
-                    inspect_relative_structure_rotate_and_shift_number
-                ),
-                plot_uniform_shifts_to_check_plotly=plot_uniform_shifts_to_check_plotly,
-                plot_translation_vectors_pointclouds=plot_translation_vectors_pointclouds,
-                plot_shifted_biopsies=plot_shifted_biopsies,
-                show_nn_dose_demonstration_plots=show_NN_dose_demonstration_plots,
-                show_nn_dose_demonstration_plots_all_trials_at_once=(
-                    show_NN_dose_demonstration_plots_all_trials_at_once
-                ),
-                show_num_containment_demonstration_plots=show_num_containment_demonstration_plots,
-                plot_cupy_containment_distribution_results=plot_cupy_containment_distribution_results,
-                show_num_nearest_neighbour_surface_boundary_demonstration=(
-                    show_num_nearest_neighbour_surface_boundary_demonstration
-                ),
-                show_num_relative_structure_centroid_demonstration=(
-                    show_num_relative_structure_centroid_demonstration
-                ),
-                show_nn_mr_adc_demonstration_plots=show_NN_mr_adc_demonstration_plots,
-                show_nn_mr_adc_demonstration_plots_all_trials_at_once=(
-                    show_NN_mr_adc_demonstration_plots_all_trials_at_once
-                ),
-                generate_cuda_log_files_mc_containment_sim=generate_cuda_log_files_MC_containment_sim,
-            ),
-            output_dumps=MCOutputDumpConfig(
-                raw_data_mc_dosimetry_dump_bool=raw_data_mc_dosimetry_dump_bool,
-                raw_data_mc_containment_dump_bool=raw_data_mc_containment_dump_bool,
-                raw_data_mc_mr_dump_bool=raw_data_mc_MR_dump_bool,
-                keep_light_containment_and_distances_to_relative_structures_dataframe_bool=(
-                    keep_light_containment_and_distances_to_relative_structures_dataframe_bool
-                ),
-            ),
-            tissue=MCTissueClassificationConfig(
-                structure_miss_probability_roi=structure_miss_probability_roi,
-                cancer_tissue_label=cancer_tissue_label,
-                default_exterior_tissue=default_exterior_tissue,
-                miss_structure_complement_label=miss_structure_complement_label,
-                tissue_volume_operator_dictionary=tissue_volume_operator_dictionary,
-            ),
-            visualization=MCVisualizationConfig(
-                num_dose_nn_to_show_for_animation_plotting=num_dose_NN_to_show_for_animation_plotting,
-                containment_results_structure_types_to_show_per_trial=(
-                    containment_results_structure_types_to_show_per_trial
-                ),
-                show_non_bx_relative_structure_z_dilation_bool=(
-                    show_non_bx_relative_structure_z_dilation_bool
-                ),
-                show_non_bx_relative_structure_xy_dilation_bool=(
-                    show_non_bx_relative_structure_xy_dilation_bool
-                ),
-                check_if_end_caps_filled_proper_nn_num=check_if_end_caps_filled_proper_NN_num,
-            ),
-        ),
-        validation_sidecars=validation_sidecar_defaults,
-        output_validation=output_validation_defaults,
-        patient_runner_validation=patient_runner_validation_defaults,
-        patient_scientific_runner=patient_scientific_runner_defaults,
-    )
-
+    # Production defaults have one config-layer owner. Callers may supply an
+    # explicitly resolved PipelineConfig (for example via dataclasses.replace).
+    pipeline_config = build_production_pipeline_config() if pipeline_config is None else pipeline_config
     if scientific_config_export_path is not None:
         from config.snapshots import build_pipeline_scientific_config_snapshot, write_pipeline_config_snapshot
 
@@ -1524,7 +270,16 @@ def main(*, scientific_config_export_path=None):
     mr_t2_ref = legacy_ref_config.mr_t2_ref
     us_ref = legacy_ref_config.us_ref
 
-    structs_referenced_dict = structure_registry_config.structs_referenced_dict
+    # Native colors belong to legacy consumers; keep the typed config pure data.
+    structs_referenced_dict = copy.deepcopy(structure_registry_config.structs_referenced_dict)
+    for structure_record in structs_referenced_dict.values():
+        if "PCD color" in structure_record:
+            structure_record["PCD color"] = np.asarray(structure_record["PCD color"], dtype=float)
+        if "PCD color dict" in structure_record:
+            structure_record["PCD color dict"] = {
+                name: np.asarray(color, dtype=float)
+                for name, color in structure_record["PCD color dict"].items()
+            }
     structs_referenced_list = list(structure_registry_config.structs_referenced_list)
     structs_referenced_list_generalized = list(structure_registry_config.structs_referenced_list_generalized)
     structs_referenced_list_generalized_unique_structs = list(
@@ -1645,7 +400,11 @@ def main(*, scientific_config_export_path=None):
     )
     optimizer_v2_render_stage_names = optimizer_v2_render_config.render_stage_names_to_render
     optimizer_v2_render_backend = optimizer_v2_render_config.render_backend
-    optimizer_v2_render_layer_style_by_name = optimizer_v2_render_config.render_layer_style_by_name
+    optimizer_v2_render_layer_style_by_name = copy.deepcopy(optimizer_v2_render_config.render_layer_style_by_name)
+    if optimizer_v2_render_layer_style_by_name is not None:
+        for layer_style in optimizer_v2_render_layer_style_by_name.values():
+            if "color" in layer_style:
+                layer_style["color"] = np.asarray(layer_style["color"], dtype=float)
     optimizer_v2_render_plotly_export_bool = optimizer_v2_plotly_export_config.enabled
     optimizer_v2_render_plotly_export_formats = optimizer_v2_plotly_export_config.formats
     optimizer_v2_render_plotly_export_width = optimizer_v2_plotly_export_config.width
@@ -1875,13 +634,81 @@ def main(*, scientific_config_export_path=None):
     patient_scientific_runner_dose_nn_render_selector_localization_kind = (
         patient_scientific_runner_config.dose_nn_render_selector_localization_kind
     )
-    
+
     # initialize perform mc sim based on other parameters
     perform_mc_dose_sim = mc_counts_config.perform_mc_dose_sim
     perform_mc_containment_sim = mc_counts_config.perform_mc_containment_sim
     perform_mc_mr_sim = mc_counts_config.perform_mc_mr_sim
     perform_MC_sim = mc_counts_config.perform_mc_sim
 
+
+    spinner_type = pipeline_config.ui.spinner_type
+    rich_live_display_bool = pipeline_config.ui.rich_live_display_bool
+    output_folder_name = pipeline_config.artifacts.output_folder_name
+    preprocessed_data_folder_name = pipeline_config.artifacts.preprocessed_data_folder_name
+    lower_bound_dose_value = pipeline_config.replay.lower_bound_dose_value
+    lower_bound_dose_gradient_value = pipeline_config.replay.lower_bound_dose_gradient_value
+    lower_bound_mr_adc_value = pipeline_config.replay.lower_bound_mr_adc_value
+    upper_bound_mr_adc_value = pipeline_config.replay.upper_bound_mr_adc_value
+    color_flattening_deg_MR = pipeline_config.replay.color_flattening_deg_mr
+    centroid_dil_sim_key = CENTROID_DIL_SIMULATED_TYPE
+    optimal_dil_sim_key = OPTIMAL_DIL_SIMULATED_TYPE
+
+    # Remaining loose legacy settings: separate future config/presentation slices.
+    data_folder_name = 'Data'
+    input_data_folder_name = "Input data"
+    use_added_in_quad_errors_as = 'two sigma' # can be 'sigma' or 'two sigma', 'two sigma' will provide tighter uncertainty clouds
+    biopsy_variation_uncertainty_setting = "Per biopsy mean" # Can be "Per biopsy max", "Per biopsy mean" or "Default only" .... See function (uncertainty_file_preper_by_struct_type_dataframe_NEW) defined in uncertainty_file_writer
+    non_biopsy_variation_uncertainty_setting = "Default only" # At the moment, only "Default only" is supported
+    uncertainty_folder_name = 'Uncertainty data'
+    uncertainty_file_name = "uncertainties_file_auto_generated"
+    uncertainty_file_extension = ".csv"
+    color_flattening_deg = 3
+    voxel_size_for_structure_volume_calc_bx = 0.1 # if set to 0 then it is calculated based on the maximum pairwise distance of the structure
+    radius_for_curvature_estimation = 1 # This is the radius for determination of tangent plane normal, making this large tends to uniformize the pointwise curvature values
+    num_bootstraps_for_regression_plots_input = 15
+    pio.templates.default = "plotly_white"
+    NPKR_bandwidth = 0.5
+    dpi_for_seaborn_plots = 100
+    open3d_views_jsons_folder_name = "open3d_views_jsons"
+    open3d_views_dose_folder_name = "dose_views"
+    open3d_views_containment_folder_name = "containment_views"
+    open_3d_screen_views_dose_jsons = ["ScreenCamera_2023-03-15-12-33-41.json",
+                                       "ScreenCamera_2023-03-15-12-33-53.json",
+                                       "ScreenCamera_2023-03-15-13-07-02.json",
+                                       "ScreenCamera_2023-03-15-13-08-08.json"
+                                       ]
+    open_3d_screen_views_containment_jsons = ["ScreenCamera_2023-02-19-15-14-47.json",
+                                              "ScreenCamera_2023-02-19-15-27-46.json",
+                                              "ScreenCamera_2023-02-19-15-14-47.json",
+                                              "ScreenCamera_2023-02-19-15-29-43.json"
+                                              ]
+    color_discrete_map_by_sim_type = {'Real': 'rgba(0, 92, 171, 1)', centroid_dil_sim_key: 'rgba(227, 27, 35,1)', optimal_dil_sim_key: 'rgba(0, 0, 0,1)', target_dil_v2_sim_key: 'rgba(26, 71, 42, 1)'}
+    display_dvh_as = ['counts','percent', 'volume'] # can be 'counts', 'percent', 'volume'
+    num_cumulative_dvh_plots_to_show = 25
+    num_differential_dvh_plots_to_show = 25
+    d_x_DVH_to_calc_list = [2,50,98] # These are D_x, x values should be given as percentages of the total volume (ie. between 0,100). the output is a dose value
+    box_plot_points_option = 'outliers'
+    notch_option = False
+    boxmean_option = True # can be 'sd' or True
+    show_processed_3d_datasets_renderings = False
+    show_processed_3d_datasets_renderings_plotly_dict = {"Plot": False, # If false then the rest of the options are irrelevant
+                                                         "SS Scatter": False,
+                                                         "SS Contour": True,
+                                                         "Dosimetric render mode": "volume", # can be "volume" or "scatter"
+                                                         "Dosimetric dose log scale": True, # If false then its linear
+                                                         "mr render mode": "volume", # can be "volume" or "scatter"
+                                                         "mr log scale": False, # If false then its linear
+                                                         }
+    display_curvature_bool = False
+    plot_guidance_map_transducer_plane_open3d_structure_set_complete_demonstration_bool = False
+    plot_immediately_after_simulation = True
+    modify_generated_uncertainty_template = False # if True, the algorithm wont be able to run from start to finish without an interupt, allowing one to modify the uncertainty file
+    write_containment_to_file_ans = True # If True, this generates and saves to file a csv file of the containment simulation
+    write_dose_to_file_ans = True # If True, this generates and saves to file a csv file of the dose simulation
+    write_preprocessing_data_to_file = True
+    write_cohort_data_to_file = True
+    num_simulated_bxs_to_create = sum([x["Create"] for x in bx_sim_locations_dict.values()])
 
     # create a dict for cohort data and dataframes
     master_cohort_patient_data_and_dataframes = {"Data": {},

@@ -1,28 +1,83 @@
 # Config Layer Rewrite Plan
 
-Last updated: 2026-05-12
+Last updated: 2026-09-14
 
-## September 2026 status and next boundary
+## September 2026 production ownership
 
-The sections below retain the May planning context; their proposed full-cohort
-prerequisites and baseline choices do not override the current standalone process
-architecture and [project north stars](PROJECT_NORTH_STARS.md).
-Scientific snapshots, strict provenance, and typed rehydration now exist. The
-five-case singleton anatomical migration gate passed under `0f2a636`; order/split
-qualification passed under clean `b123089` on 2026-09-13. Biopsy preprocessing is
-the next scientific gate. Defaults still originate in main,
-and the export-only option is transitional.
+`config/production.py::build_production_pipeline_config()` now constructs the
+existing `PipelineConfig`. Matching dataclass defaults remain authoritative;
+production differences and assembly relationships live in that module. Main no
+longer declares the moved defaults or constructs a parallel root. Explicit
+session/scientific overrides use `dataclasses.replace` on existing typed slices;
+main accepts the resolved `pipeline_config`, and other callers can snapshot it
+without importing main. Validation remains with the existing domain contracts.
 
-The next config slice should extract existing production default/config
-construction into its proper owner, with exact snapshot equivalence and no
-duplicated parameters. This can proceed separately from patient qualification;
-it need not await full MC validation. Main and future CLI/API callers should
-consume that owner. Narrow domain configs remain scientific authority;
-master-info dictionaries must progressively stop acting as config storage.
+The extraction preserves the unmodified main's scientific payload and SHA exactly:
+`7d8ee8231b2573fab3c081de68ea77fdee1f855553235010ca8104caeaddd70c`.
+Full config payloads and 248 consumed legacy readbacks also match; scientific
+snapshot → rehydration → snapshot is exact. Temporary before/after evidence is
+outside Git, not a permanent golden config. This ownership change needs focused
+config tests and exact equivalence, not another patient campaign.
 
-The independence phase adds no scientific parameters or alternate config
-authority. Input ledgers belong to input provenance, and resolved thresholds
-belong to stage evidence; neither substitutes for completing config extraction.
+Production owns cohort bootstrap/removal policy, structure registry/uncertainty
+records, preprocessing/replay choices, optimizer search and diagnostics, guidance
+choices, seeds and production validation-hook choices. Existing typed defaults
+supply matching biopsy, MC counts, UI/artifact and other domain settings.
+Integer-versus-float production representations are retained where canonical
+identity distinguishes them. Native color arrays are reconstructed only for
+legacy consumers. Shared kernel choices reuse their existing optimizer-v1 typed
+defaults; a future common kernel contract should remove that placement coupling.
+
+The representative biopsy-preprocessing gate passed exact 0/0 for `181 (F2)` at
+clean `24ae3c7`, with both fresh subprocess lanes successful and complete coverage
+of 2 real plus 9 simulated biopsies. This is checkpoint input/execution migration
+parity. The accepted geometry and independent scientific evidence are in the
+[biopsy runbook](../runtime/BIOPSY_PREPROCESSING_RUNBOOK.md).
+
+Remaining loose settings and compatibility readbacks are inventoried in
+[config pathways](PATIENT_RUNNER_CONFIG_PATHWAYS.md#remaining-config-inventory).
+The May plan below retains historical context; its full-cohort prerequisites and
+proposed root names do not override current ownership, proportionate gates or the
+[project north stars](PROJECT_NORTH_STARS.md).
+
+## Future config discoverability and introspection
+
+Every externally meaningful option should eventually expose one authoritative
+definition through the typed domain contract. TOML is the future human-editable
+scientific adapter/serialization format; `PipelineConfig` remains runtime
+scientific authority. JSON snapshots remain generated evidence. The GUI, CLI and
+Python/API consumers must share defaults, allowed values, validation and semantics.
+Current TOML profiles remain orchestration-only; this pass adds no scientific
+TOML, metadata framework or schema generator.
+
+The eventual option metadata should provide, where applicable:
+
+- stable canonical path/name and Python/scientific type;
+- resolved production default and required/optional status;
+- legal minimum/maximum and open/closed bounds;
+- finite Enum/Literal choices, physical units and a concise description;
+- a stable link to detailed behavioral/scientific documentation;
+- deprecation and replacement metadata.
+
+Production defaults must be obtained from the production config, not copied into
+metadata, templates or GUI code. Generic dataclass defaults and a resolved
+production choice may differ; introspection must identify the requested
+production context. Existing categorical strings and procedural validation are
+retained here. As individual domains evolve, use Enum/Literal domains and
+introspectable declarative constraints where they preserve scientific behavior;
+keep validation associated with those typed definitions.
+
+The same metadata should support strict TOML parsing and commented templates,
+CLI `config describe <canonical.path>` help, GUI ranges/dropdowns/tooltips,
+Python/API introspection, generated reference documentation, tests and agent
+consumer tools. JSON Schema may later be generated from it. Command examples
+such as `config describe mc.counts.dose_simulations` describe a desired interface,
+not an implemented command or a promise to rename existing fields.
+
+GUI layout, navigation and product workflow remain presentation choices. Units,
+scientific descriptions, bounds and allowed values belong to the shared contract.
+The engine must stay independently human-readable, machine-readable, scriptable,
+testable and scientifically auditable even if the GUI becomes the main interface.
 
 ## Purpose
 
@@ -231,13 +286,13 @@ forms should serialize into and out of that typed tree rather than bypassing it.
 
 Near-term policy:
 
-- keep main/default values in Python until the current config bridge and
-    scientific-shadow path have parity evidence,
+- keep production choices in the Python config owner and matching defaults in
+    the existing typed domain definitions,
 - allow JSON snapshots or manifests to record the resolved `PipelineConfig`,
     but do not make JSON the only source of truth yet,
 - introduce a JSON schema only after the typed root config stops moving quickly,
-- treat GUI-specific labels, help text, grouping, visibility, and product
-    workflow choices as adapter metadata outside the scientific config contract.
+- share scientific labels/help, constraints and documentation through the typed
+    option contract; keep GUI layout, visibility and product workflow in adapters.
 
 This keeps the scientific repository usable as a public research/developer
 engine while allowing a private GUI or product repository to wire into stable

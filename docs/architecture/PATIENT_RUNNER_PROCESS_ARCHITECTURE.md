@@ -152,8 +152,8 @@ September 2026 Phase 2A checkpoint:
 - `PipelineConfig.bootstrap` owns structure-removal, contour matching, fraction
    parsing, and simulated-biopsy bootstrap policy. A typed adapter calls the
    existing patient bootstrap and has synthetic parity coverage.
-- Remaining Phase 2 work is reusable default config construction plus
-   user-operated `anatomical_qa` parity against the isolated from-legacy path.
+- Production config construction belongs to `config/production.py`; current
+   qualification status is recorded in the roadmap and runbooks.
 
 September 2026 Phase 2B checkpoint:
 
@@ -395,6 +395,20 @@ Use the same config separation used by the validation work:
 - TOML is the human-authored run profile.
 - Typed Python config/dataclasses are the runtime authority.
 - JSON manifests and summaries are generated provenance.
+
+`config/production.py::build_production_pipeline_config()` owns production choices
+and assembles the existing `PipelineConfig` using matching domain defaults.
+Main/oracle consumes that result or an explicitly supplied typed tree. The public
+builder and snapshot API can also be used without importing main; standalone
+workers continue rehydrating verified snapshots. Legacy flat locals/dictionaries
+are downstream compatibility views. Config construction owns no patient state,
+file discovery, pools or rendering resources.
+
+Future human-editable scientific TOML and CLI/GUI/API adapters must consume the
+same typed option definitions, validation and resolved production defaults. The
+[config discoverability contract](CONFIG_LAYER_REWRITE_PLAN.md#future-config-discoverability-and-introspection)
+defines shared metadata ownership; no separate GUI or serialization authority is
+introduced. Current TOML remains orchestration-only.
 
 A future primary run profile should describe user-facing execution choices such
 as patient selection, pathway, output root, failure policy, worker backend, and

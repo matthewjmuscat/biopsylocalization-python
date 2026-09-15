@@ -1,12 +1,13 @@
 # Patient Runner Config Pathways
 
-Last updated: 2026-09-08
+Last updated: 2026-09-14
 
 ## Purpose
 
-This document maps the current configuration pathways before the next config
-rewrite pass. It is intentionally an investigation artifact and rewrite guide,
-not an implementation spec that claims the current code is already clean.
+This document maps config ownership, compatibility consumers and the remaining
+migration boundaries. Production construction is extracted; the detailed domain
+inventory retains legacy variable names to locate consumers, not to designate
+main as their default owner.
 
 The immediate goal is to prevent the patient runner, scientific-shadow lane, and
 future GUI from inheriting the current main-local configuration sprawl as their
@@ -22,6 +23,11 @@ Use this map when changing config surfaces that touch:
 ## Investigated Surfaces
 
 Current durable config surfaces:
+
+- `config/production.py`: production choices and assembly of the existing typed
+  root; matching domain defaults are reused. Public construction needs no main,
+  patient execution, GPU or GUI imports. The existing optimizer config still
+  imports NumPy. Guidance package exports load planning only when requested.
 
 - `config/pipeline.py`: root `PipelineConfig` plus UI, artifact, preprocessing,
   replay, guidance, optimizer runtime, random seed, and validation-sidecar
@@ -64,38 +70,52 @@ future config authority.
 
 ## Current Main Flow
 
-The main file currently performs four separate config roles in one place:
-
-1. Declares legacy dictionary key names and scientific labels.
-2. Declares many user/runtime/science/debug local variables.
-3. Builds a partial `PipelineConfig` from only some of those locals.
-4. Passes many remaining locals directly into scientific modules.
-
 Current high-level flow:
 
 ```text
-main-local constants and knobs
-  -> PipelineConfig subset
-      -> preprocessing/adapters/guidance/replay/random/validation sidecars
-  -> loose direct call arguments
-      -> optimizer v1/v2
-      -> MC transform generation and MC simulation
-      -> simulated-biopsy prep/planning/finalization
-      -> sampled-biopsy processing
-      -> output table generation and validation surfaces
-  -> legacy Global dictionaries
-      -> Preprocessing info
-      -> MC info
-      -> Random info
-      -> output directory metadata
-      -> downstream modules that still read legacy config/status
+config/production.py + matching domain dataclass defaults
+  -> PipelineConfig
+      -> main/oracle compatibility readbacks
+      -> scientific snapshot -> verified standalone rehydration
+      -> future TOML / CLI / GUI / Python adapters
+remaining loose main settings -> existing legacy consumers
+runtime-derived state -> patient/attempt products and legacy metadata
 ```
 
-`PipelineConfig` is therefore useful, but it is not yet the full config root.
-The highest-risk rewrite failure would be adding a patient-runner bridge that
-copies every loose local into `PatientRunnerScientificConfig` directly. That
-would make the new runner depend on the same scattered source of truth that the
-config rewrite is meant to replace.
+Main accepts an explicit `pipeline_config`; otherwise it calls
+`build_production_pipeline_config()`. Callers use `dataclasses.replace` on the
+existing typed tree for overrides. There is no new root type, free-form override
+schema or environment-driven defaults layer. Scientific validation stays with
+the domain types. Production output paths, UI and validation choices use existing
+config fields; input paths and live runtime resources are not inferred by the
+builder. Legacy `Global` metadata flows outward from config/readbacks.
+
+The extraction removed 333 construction assignments, including dependencies of
+the old assembly, and 44 obsolete construction imports. Existing flat readbacks
+remain transitional. The scientific snapshot and full config payload equal the
+unmodified main exactly; 248 legacy values consumed after setup also match.
+Native colors are restored at the legacy boundary without putting arrays in the
+new production tree. No permanent golden JSON or introspection framework was added.
+
+## Remaining config inventory
+
+| Category | Current scope and next ownership decision |
+| --- | --- |
+| Already owned by `PipelineConfig` | Legacy references, bootstrap/removals/contours/simulation families, structure registry and uncertainty parameter records, preprocessing/kernel/debug, biopsy geometry/planning/sampling settings, optimizer v1/v2, MC counts/prep/simulation/tissue/output/debug, replay thresholds, guidance, seeds, UI/artifacts and validation/runner settings. Production choices come from `config/production.py`; matching values come from existing domain defaults. |
+| Loose in main but represented by another typed domain | `d_x_DVH_to_calc_list` has a field in `PatientMCOutputTableConfig`; the patient scientific builder also supplies `DEFAULT_D_X_DVH_TO_CALC_LIST`. Root ownership and this remaining duplicated choice need a separate MC-output config slice. |
+| Not yet represented in the root typed config | Active uncertainty-combination and biopsy/non-biopsy variation modes: `use_added_in_quad_errors_as`, `biopsy_variation_uncertainty_setting`, `non_biopsy_variation_uncertainty_setting`. Some other apparent knobs, including biopsy volume resolution, curvature radius, regression-bootstrap count and `NPKR_bandwidth`, have no active main reads; investigate deletion before creating new fields. |
+| Runtime/presentation/orchestration, outside scientific authority | Input/uncertainty/output locations, template-edit pauses, CSV-write controls, plot counts/styles/camera presets, and aggregate-render choices. Pure options may use typed presentation/run config. Timers, loggers, pools, DICOM objects, arrays/dataframes, patient dictionaries and derived simulation counts remain runtime state and must never become config resources. |
+
+Twelve retained loose declarations have no active main reads; archived text is
+not an active consumer. They remain untouched in this extraction. Existing
+scientific identity still includes some nested debug/render settings; changing
+that identity boundary is separate work, not an implicit consequence of moving
+ownership. Shared kernel defaults currently live on `OptimizerV1RuntimeConfig`;
+a future common kernel contract can remove that placement coupling.
+
+The future shared metadata, scientific TOML and GUI/API contract is in the
+[config plan](CONFIG_LAYER_REWRITE_PLAN.md#future-config-discoverability-and-introspection).
+These are planned adapters over typed authority, not another config model.
 
 ## Target Run Profile Boundary
 
@@ -154,8 +174,9 @@ general editable JSON config loader.
 The standalone builder also receives the resolved pathway stage set. For
 `anatomical_qa`, it constructs only grid and anatomical configs; optimizer, MC,
 sampling, and guidance configs remain absent and their modules are not imported
-through config construction. Reusable default extraction from main remains a
-separate follow-up.
+through config construction. Production defaults can now be constructed through
+`config.production` independently of main; snapshot rehydration and pathway
+selection are unchanged.
 
 ## Current Config Tree By Domain
 
@@ -195,8 +216,8 @@ or `Num cases` string literals in new runner/config code.
 September 2026 status: `PipelineConfig.bootstrap` now owns typed structure
 removal rules, contour matching names, fraction parsing policy,
 simulated-biopsy bootstrap policy, and legacy MR output-table names. Existing
-main locals still feed this config during compatibility validation, but the
-standalone bootstrap adapter no longer needs those loose values duplicated.
+production construction supplies these policies and main reads them back for
+compatibility. The standalone bootstrap adapter consumes the same typed policy.
 
 ### Structure Registry And Tissue Labels
 
@@ -463,7 +484,7 @@ and written outward, not discovered by reading the legacy global dict first.
 
 Current source:
 
-- loose main locals for optimizer-v1 lattice/search policy
+- `PipelineConfig.optimizer.optimizer_v1`, with compatibility readbacks in main
 - `OptimizerV1LegacyConfig`
 - global random seed for optimizer-v1
 - debug/presentation booleans in the same adapter config
@@ -512,10 +533,10 @@ while scientific shadow uses the side-effect-free core config.
 Current source:
 
 - `OptimizerV2SearchConfig`
-- adaptive block parameters in main
-- calibration/chunk settings in main
-- validation and benchmark toggles in main
-- render and Plotly export settings in main
+- production adaptive-block choices in `config/production.py`
+- typed capacity/calibration defaults
+- typed diagnostics and production validation/benchmark choices
+- typed render/Plotly export defaults and production style choices
 - `OptimizerV2LiveConfig`
 
 Current consumers:
@@ -853,45 +874,27 @@ they are gone.
 Do not make the GUI schema first. Build clean typed Python config first, then add
 GUI/file serialization views over it.
 
-## Current Cleanup Status And Next Gate
+## Current cleanup status and next gates
 
-The config-boundary pass now has the pieces needed for the first
-scientific-shadow validation gate:
+Production construction is complete with exact scientific/full snapshot and
+legacy-readback equivalence. Main still translates typed config into flat locals;
+new scientific modules should receive existing narrow config slices directly.
+Standalone workers continue consuming verified snapshots. No additional real
+patient gate is required solely for this ownership extraction.
 
-1. `PipelineConfig` owns the current patient-runner-facing root groups for
-  legacy references, structure registry, grid preprocessing, biopsy settings,
-  preprocessing, optimizer-v1/v2, MC, guidance, and validation sidecars.
-2. `PreprocessingConfig` stores interpolation, geometry, kernel-execution, and
-  debug subgroups while preserving the legacy flat attribute names as
-  compatibility properties.
-3. Optimizer-v2 and MC have nested runtime/debug/output group shells that map to
-  the existing patient-runner adapter contracts.
-4. `build_patient_runner_scientific_config(...)` constructs the current
-  `PatientRunnerScientificConfig` tree from `PipelineConfig` plus runtime and
-  discovered resources.
-5. `biopsy_localization_convex_main.py` still re-derives flat locals from
-  `PipelineConfig` for the legacy oracle path, but new patient-runner work
-  should consume the typed config tree instead of those translated locals.
+The representative biopsy-preprocessing gate passed exact 0/0 for `181 (F2)` at
+clean `24ae3c7`, with both fresh subprocess lanes successful and complete coverage
+of 2 real and 9 simulated biopsies. This validates checkpoint input/execution
+migration parity, not independent scientific correctness.
 
-Do not migrate main-facing declarations into TOML or JSON as the runtime
-authority before this validation gate. The next stable source is the typed
-Python `PipelineConfig`. TOML should remain a human-authored profile layer and
-JSON should remain generated evidence or resolved-plan output until
-scientific-shadow parity is credible. Neither should become a parallel config
-language that can drift from the Python contracts.
+Next architectural work should replace one existing grid/geometry dictionary
+boundary and remove the superseded main responsibility. Next scientific work
+should qualify transform/optimizer producer contracts, then realized biopsy
+geometry in bounded stages. Input or scientific execution changes need focused
+numerical evidence; a full cohort is not a prerequisite for every config edit.
+See the [roadmap](../roadmap/PATIENT_RUNNER_UPGRADE_ROADMAP.md#september-2026-priorities).
 
-New debug/render controls should follow the same rule. Add typed config fields
-where the patient-runner stage can consume them, then expose them through a run
-profile later. Do not add fresh render toggles to legacy main as the owning
-surface for new patient-runner behavior.
-
-The next validation sequence is:
-
-1. Run the legacy/default cohort path and compare against the clean May 22 or
-  May 21 baseline to verify the wider config bridge preserved outputs.
-2. Run small `SCIENTIFIC_SHADOW` patient sets through the typed builder in
-  staged pathways: biopsy preprocessing, optimization, post-optimizer biopsy
-  realization, sampling/classification, then current dosimetry.
-3. Widen scientific-shadow validation only after the staged runs resolve runtime
-  context gaps such as RTSTRUCT paths, MR ADC unit state, RNG, parallel pool,
-  and view-list availability.
+Keep new defaults and validation in typed config, use shared option metadata for
+future file/CLI/GUI adapters, and retire individual compatibility readbacks as
+scientific consumers adopt typed contracts. Do not use this inventory as authority
+for an unbounded rewrite or to enable additional standalone pathways.

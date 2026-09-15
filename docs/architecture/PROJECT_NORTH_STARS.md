@@ -55,8 +55,10 @@ Validation enables replacement and deletion. Identify permanent, transitional,
 reference-only, and removable components. Avoid both speculative frameworks and
 repetitive bespoke experiment systems. Keep these migration tracks visible:
 
-1. **Configuration:** finish production defaults/config construction outside
-   main. Typed config remains authoritative; export-only main is transitional.
+1. **Configuration:** keep production construction in `config/production.py`
+   and extend typed ownership to the remaining scientific settings in bounded
+   slices. Typed config remains authoritative; export-only main is transitional.
+   TOML/CLI/GUI must share that contract and its future introspection metadata.
    Never duplicate scientific defaults in a validation recipe.
 2. **Main:** remove responsibilities as replacement services become usable and
    validated. Retain an explicit oracle route; moving a monolith is not enough.
@@ -91,9 +93,11 @@ development velocity matter as well as caution.
 
 ## Opportunities recorded during the independence phase
 
-- **Soon: production config construction.** The new gate consumes snapshots;
-  extracting defaults remains separate behavior-preserving work that can proceed
-  while user-operated gates run.
+- **Completed: production config construction.** Main now consumes the config
+  owner with exact snapshot equivalence. Remaining scientific settings and future
+  shared TOML/CLI/GUI introspection are described in the
+  [config plan](CONFIG_LAYER_REWRITE_PLAN.md); they do not require a full MC
+  campaign before architectural work can proceed.
 - **Soon: guidance producer contracts.** `guidance_maps.planning` already has
   one-patient non-plotting planning. Its workflow requires prepared/finalized
   target cores, while the executable guidance DAG node lists only anatomical and
